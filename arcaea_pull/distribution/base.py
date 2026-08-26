@@ -15,6 +15,10 @@ class BackendUnavailableError(FlashTransferError):
     """The active platform does not expose the required extension actions."""
 
 
+class BackendAmbiguousError(BackendUnavailableError):
+    """More than one active platform matched without a unique selector."""
+
+
 class BackendActionError(FlashTransferError):
     """The backend action was available but rejected or failed the request."""
 
@@ -39,4 +43,3 @@ class FlashTransferBackend(ABC):
     async def send_file(
         self, target: str, path: Path, *, name: str = ""
     ) -> FlashTransferResult: ...
-

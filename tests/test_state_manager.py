@@ -34,3 +34,21 @@ def test_save_leaves_no_temporary_file(tmp_path):
     manager.save(manager.load())
     assert not list(tmp_path.glob("*.tmp"))
 
+
+def test_schema_one_is_migrated_without_quarantine(tmp_path):
+    path = tmp_path / "state.json"
+    old = {
+        "schema_version": 1,
+        "remote": {"version": "1"},
+        "observed": {"version": "1"},
+        "notification": {},
+        "download": {"last_downloaded_version": "1"},
+        "distribution": {},
+        "last_extracted_version": None,
+    }
+    path.write_text(json.dumps(old), encoding="utf-8")
+    state = StateManager(path).load()
+    assert state["schema_version"] == SCHEMA_VERSION
+    assert state["download"]["last_downloaded_version"] == "1"
+    assert state["distribution"] == {"versions": {}}
+    assert not list(tmp_path.glob("state.json.corrupt-*"))

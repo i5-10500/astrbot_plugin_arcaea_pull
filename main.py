@@ -19,7 +19,7 @@ from .arcaea_pull.core.notifier import NotificationError, Notifier
 from .arcaea_pull.core.scheduler import ScheduleConfigError, seconds_until_next
 from .arcaea_pull.core.state_manager import StateManager
 from .arcaea_pull.core.update_checker import UpdateChecker
-from .arcaea_pull.distribution import NapCatFlashTransferBackend
+from .arcaea_pull.distribution import BackendProvider, DistributionService
 
 PLUGIN_NAME = "astrbot_plugin_arcaea_pull"
 
@@ -27,7 +27,7 @@ PLUGIN_NAME = "astrbot_plugin_arcaea_pull"
 @register(
     PLUGIN_NAME,
     "i5-10500",
-    "Arcaea 中国大陆版 APK 更新检测、可靠下载与 QQ 闪传 PoC",
+    "Arcaea 中国大陆版 APK 更新检测、可靠下载与 QQ 闪传分发",
     __version__,
     "https://github.com/i5-10500/astrbot_plugin_arcaea_pull",
 )
@@ -51,6 +51,16 @@ class ArcaeaPullPlugin(Star):
         )
         self.notifier = Notifier(
             _string_list(config.get("notify_targets", [])), self._send_notification
+        )
+        flash_targets = _string_list(config.get("flash_transfer_targets", []))
+        self.backend_provider = BackendProvider(
+            context,
+            flash_targets,
+            platform_id=str(config.get("flash_transfer_platform_id", "")),
+            self_id=str(config.get("flash_transfer_self_id", "")),
+        )
+        self.distributor = DistributionService(
+            self.state, self.backend_provider.resolve, flash_targets
         )
         self.checker = UpdateChecker(
             self.api_client,
@@ -118,6 +128,7 @@ class ArcaeaPullPlugin(Star):
         result = await self.checker.check()
         if (
             result.downloaded is not None
+            and not result.downloaded.reused
             and bool(self.config.get("notify_on_download_success", True))
         ):
             with suppress(NotificationError):
@@ -126,7 +137,29 @@ class ArcaeaPullPlugin(Star):
                     f"大小 {result.downloaded.size} 字节，SHA-256 "
                     f"{result.downloaded.sha256}"
                 )
-        return result
+        distribution = None
+        if bool(self.config.get("auto_flash_transfer", False)):
+            if not bool(self.config.get("auto_download", False)):
+                logger.error("AUTO_FLASH_MISCONFIGURED: auto_flash_transfer requires auto_download")
+            elif result.downloaded is not None:
+                distribution = await self.distributor.distribute(result.downloaded)
+                await self._notify_distribution(distribution)
+        return result, distribution
+
+    async def _notify_distribution(self, result) -> None:
+        if result.succeeded and bool(self.config.get("notify_on_distribution_success", True)):
+            with suppress(NotificationError):
+                await self.notifier.broadcast(
+                    f"Arcaea {result.version} APK 闪传完成："
+                    f"成功 {result.succeeded}，失败 {result.failed}，"
+                    f"已跳过 {result.skipped}。"
+                )
+        elif result.failed and bool(self.config.get("notify_on_distribution_failure", True)):
+            with suppress(NotificationError):
+                await self.notifier.broadcast(
+                    f"Arcaea {result.version} APK 闪传失败："
+                    f"失败 {result.failed}，已跳过 {result.skipped}。"
+                )
 
     @filter.command_group("apull")
     def apull(self):
@@ -139,6 +172,16 @@ class ArcaeaPullPlugin(Star):
         state = self.state.load()
         observed = state["observed"].get("version") or "未记录"
         downloaded = state["download"].get("last_downloaded_version") or "未记录"
+        auto_download = bool(self.config.get("auto_download", False))
+        auto_flash = bool(self.config.get("auto_flash_transfer", False))
+        if auto_flash and not auto_download:
+            flash_status = "AUTO_FLASH_MISCONFIGURED (需要同时启用 auto_download)"
+        else:
+            try:
+                flash_status = self.backend_provider.resolve().status
+            except Exception as exc:  # noqa: BLE001 - status is diagnostic
+                flash_status = f"UNAVAILABLE ({exc})"
+        distribution = _distribution_summary(state, observed)
         yield event.plain_result(
             "\n".join(
                 [
@@ -147,9 +190,10 @@ class ArcaeaPullPlugin(Star):
                     f"last_downloaded_version: {downloaded}",
                     f"check_enabled: {bool(self.config.get('check_enabled', True))}",
                     f"schedule: {_schedule_summary(self.config)}",
-                    f"auto_download: {bool(self.config.get('auto_download', False))}",
-                    "FlashTransfer: READY_UNVERIFIED "
-                    "(NapCat >= v4.10.47; 需执行白名单小文件实测)",
+                    f"auto_download: {auto_download}",
+                    f"auto_flash_transfer: {auto_flash}",
+                    f"FlashTransfer: {flash_status}",
+                    f"distribution: {distribution}",
                 ]
             )
         )
@@ -159,13 +203,18 @@ class ArcaeaPullPlugin(Star):
     async def check(self, event: AstrMessageEvent):
         """立即检查一次远端版本。"""
         try:
-            result = await self._check_with_download_notice()
+            result, distribution = await self._check_with_download_notice()
             summary = "检测到版本变化" if result.changed else "版本未变化"
             details = [f"{summary}: {result.artifact.version}"]
             if result.downloaded:
                 details.append(f"APK: {result.downloaded.path}")
             if result.notification_error:
                 details.append(f"通知失败: {result.notification_error}")
+            if distribution is not None:
+                details.append(
+                    f"闪传: success={distribution.succeeded}, "
+                    f"failed={distribution.failed}, skipped={distribution.skipped}"
+                )
             yield event.plain_result("\n".join(details))
         except Exception as exc:  # noqa: BLE001 - return diagnostic to admin
             logger.exception(f"Manual Arcaea update check failed: {exc}")
@@ -187,12 +236,42 @@ class ArcaeaPullPlugin(Star):
                     )
             reused = "（已存在，未重复下载）" if record.reused else ""
             yield event.plain_result(
-                f"APK 就绪{reused}: {record.path}\n"
-                f"size={record.size}\nsha256={record.sha256}"
+                f"APK 就绪{reused}: {record.path}\nsize={record.size}\nsha256={record.sha256}"
             )
         except Exception as exc:  # noqa: BLE001 - return diagnostic to admin
             logger.exception(f"Manual Arcaea APK download failed: {exc}")
             yield event.plain_result(f"下载失败：{exc}")
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @apull.command("distribute")
+    async def distribute(self, event: AstrMessageEvent):
+        """仅分发当前远端版本已可靠下载的 APK，不隐式下载。"""
+        try:
+            async with self.pipeline_lock:
+                artifact = await self.api_client.fetch()
+                record = self.downloader.existing_record(artifact)
+            if record is None:
+                yield event.plain_result(
+                    f"拒绝分发：当前最新版本 {artifact.version} 尚无可靠本地 APK；"
+                    "请先执行 /apull download。"
+                )
+                return
+            result = await self.distributor.distribute(record)
+            await self._notify_distribution(result)
+            details = [
+                f"分发完成: version={result.version}",
+                f"success={result.succeeded}, failed={result.failed}, skipped={result.skipped}",
+            ]
+            details.extend(
+                f"{item.target}: {item.status.value}"
+                + (" (already sent)" if item.skipped else "")
+                + (f" ({item.error})" if item.error else "")
+                for item in result.targets
+            )
+            yield event.plain_result("\n".join(details))
+        except Exception as exc:  # noqa: BLE001 - return diagnostic to admin
+            logger.exception(f"Manual Arcaea APK distribution failed: {exc}")
+            yield event.plain_result(f"分发失败：{exc}")
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @apull.command("flash_test")
@@ -202,18 +281,6 @@ class ArcaeaPullPlugin(Star):
         if not group_id:
             yield event.plain_result("闪传诊断只能在 aiocqhttp 群聊中执行。")
             return
-        bot = getattr(event, "bot", None)
-        call_action = getattr(bot, "call_action", None)
-        if not callable(call_action):
-            yield event.plain_result(
-                "当前事件未提供 aiocqhttp call_action，FlashTransfer backend 不可用。"
-            )
-            return
-        backend = NapCatFlashTransferBackend(
-            call_action,
-            _string_list(self.config.get("flash_transfer_targets", [])),
-            self_id=str(event.get_self_id() or "") or None,
-        )
         probe_path = Path(self.data_dir) / "flash-transfer-probe.txt"
         probe_path.write_text(
             "astrbot_plugin_arcaea_pull Flash Transfer PoC\n"
@@ -221,12 +288,12 @@ class ArcaeaPullPlugin(Star):
             encoding="utf-8",
         )
         try:
+            backend = self.backend_provider.resolve()
             result = await backend.send_file(
                 group_id, probe_path, name="Arcaea Pull FlashTransfer PoC"
             )
             yield event.plain_result(
-                f"QQ 闪传 PoC 成功：group={result.target}, "
-                f"fileset_id={result.file_set_id}。这不代表 APK 自动分发已启用。"
+                f"QQ 闪传 PoC 成功：group={result.target}, fileset_id={result.file_set_id}。"
             )
         except Exception as exc:  # noqa: BLE001 - typed backend detail goes to admin
             logger.exception(f"Flash Transfer PoC failed: {exc}")
@@ -242,11 +309,18 @@ def _string_list(value: Any) -> list[str]:
 def _schedule_summary(config: AstrBotConfig) -> str:
     extras = _string_list(config.get("extra_check_times", []))
     interval = config.get("check_interval_minutes", 30)
-    if (
-        isinstance(interval, bool)
-        or not isinstance(interval, int)
-        or not 1 <= interval <= 1440
-    ):
+    if isinstance(interval, bool) or not isinstance(interval, int) or not 1 <= interval <= 1440:
         return "INVALID"
     primary = f"every {interval}m from local 00:00"
     return f"{primary}; extras={extras or 'none'}"
+
+
+def _distribution_summary(state: dict[str, Any], version: str) -> str:
+    versions = state.get("distribution", {}).get("versions", {})
+    targets = versions.get(version, {}).get("targets", {})
+    counts = {"pending": 0, "success": 0, "failed": 0}
+    for value in targets.values():
+        status = value.get("status") if isinstance(value, dict) else None
+        if status in counts:
+            counts[status] += 1
+    return ", ".join(f"{key}={value}" for key, value in counts.items())

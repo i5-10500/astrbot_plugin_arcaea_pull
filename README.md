@@ -1,11 +1,15 @@
 # astrbot_plugin_arcaea_pull
 
-AstrBot 的 Arcaea 本地资源获取与分发基础设施插件。当前版本 **v0.2.3**
+AstrBot 的 Arcaea 本地资源获取与分发基础设施插件。当前版本 **v0.3.0**
 负责检测 Arcaea 中国大陆版（C 版）APK 更新、按白名单通知、可靠下载最新版
-APK，并提供 NapCat QQ 闪传的管理员诊断 PoC。
+APK，并通过 NapCat QQ 闪传向显式白名单群可靠分发。
 
 > 本阶段不包含 APK 解包或游戏资源解析。QQ 闪传仍是实验性能力，实际可用性取决于
 > AstrBot、aiocqhttp、NapCat、QQ 客户端与账号环境。
+
+> 安全边界：v0.3.0 只验证下载完整性、ZIP/APK 基础结构和文件 SHA-256，尚不能
+> 证明 APK 由 lowiro 签名。发行者签名、包身份和回滚保护将在 v0.3.1 加入；在此
+> 之前只应向受控测试群启用自动闪传。
 
 ## 功能
 
@@ -16,14 +20,16 @@ APK，并提供 NapCat QQ 闪传的管理员诊断 PoC。
 - APK 流式写入 `.apk.part`，仅限制连接及数据块空闲时间，不限制大文件总下载时长；
   校验大小、ZIP/APK 格式与 SHA-256 后原子改名。
 - 持久化并分离记录已观察、已通知、已下载版本。
-- NapCat `create_flash_task` + `send_flash_msg` 闪传 PoC；仅允许当前
-  `flash_transfer_targets` 白名单群，且绝不回退为普通群文件。
+- NapCat `create_flash_task` + `send_flash_msg` 自动闪传；按版本和目标记录结果，
+  成功不重发、失败会重试，且绝不回退为普通群文件。
+- 从 AstrBot 活动平台管理器逐轮解析 aiocqhttp 客户端；多实例必须通过平台 ID
+  或机器人 QQ 号消歧，避免使用重载前的陈旧客户端。
 - 定时与手动操作共享互斥锁，避免重复通知和重复下载。
 
 ## 安装
 
 在 AstrBot WebUI 的插件管理页上传
-`astrbot_plugin_arcaea_pull-v0.2.3.zip`，或在 GitHub 仓库可访问后使用仓库 URL
+`astrbot_plugin_arcaea_pull-v0.3.0.zip`，或在 GitHub 仓库可访问后使用仓库 URL
 安装：
 
 ```text
@@ -46,12 +52,15 @@ data/plugin_data/astrbot_plugin_arcaea_pull/
 - `check_interval_minutes`：检查间隔（分钟），默认 `30`，只允许 `1`–`1440` 的整数。
 - `extra_check_times`：额外检查时间列表，支持 `HH:MM` 和 `HH:MM:SS`。
 - `notify_targets`：AstrBot 统一会话标识（UMO）列表，仅用于通知。
-- `auto_download`：发现版本变化后自动下载，默认关闭。
+- `auto_download`：自动确保当前远端版本已下载；下载失败会在后续检查重试。
 - `flash_transfer_targets`：QQ 群号列表，仅用于闪传。
 - `request_timeout`：元数据请求总超时；`retry_count`：HTTP 最大尝试次数。
 - `download_connect_timeout`、`download_read_timeout`：下载连接超时和数据块间空闲超时；
   APK 下载没有整体总超时。
-- `auto_flash_transfer`：v0.2.3 仅预留，当前不会自动分发 APK。
+- `auto_flash_transfer`：自动分发当前已下载 APK，必须同时启用 `auto_download`。
+- `flash_transfer_platform_id`、`flash_transfer_self_id`：多 aiocqhttp 实例时用于
+  选择唯一发送端；单实例保持空值。
+- `notify_on_distribution_success`、`notify_on_distribution_failure`：分发摘要通知。
 
 不要把 `notify_targets` 和 `flash_transfer_targets` 当成同一白名单；二者的标识
 类型和权限意义不同。
@@ -69,11 +78,14 @@ extra_check_times = ["04:05:30"]
 /apull status
 /apull check
 /apull download
+/apull distribute
 /apull flash_test
 ```
 
 `flash_test` 必须在 aiocqhttp 的当前群聊中运行，当前群号也必须在
 `flash_transfer_targets`。它只发送插件生成的小型无敏感文本文件，不发送 APK。
+`distribute` 只处理当前远端版本已经可靠下载的 APK，不会隐式下载；已经成功的
+“版本 × 群号 × SHA-256”组合会跳过。
 
 NapCatQQ 首次在 **v4.10.47** 发布 `create_flash_task` 与 `send_flash_msg` 扩展
 action；建议使用 v4.10.47 或更新版本，并务必在目标机器执行实测。详见
@@ -84,13 +96,16 @@ action；建议使用 v4.10.47 或更新版本，并务必在目标机器执行�
 ## 常见问题
 
 - 元数据请求失败：检查到 `webapi.lowiro.com` 的 HTTPS 网络、超时与代理设置。
-- 大型 APK 下载超时：v0.2.3 已取消整体总超时；如果长时间收不到新数据，
+- 大型 APK 下载超时：已取消整体总超时；如果长时间收不到新数据，
   调大 `download_read_timeout`。源站不支持断点续传时，失败重试仍会从头下载。
 - 下载留下 `.part`：失败路径会自动清理；检查磁盘空间和目录权限后重试。
 - 提示 action 不存在：升级 NapCat，确认 AstrBot 使用 aiocqhttp/OneBot v11 连接。
 - 闪传群被拒绝：把当前纯 QQ 群号显式加入 `flash_transfer_targets`。
 - 安装 v0.2.1 时出现 `No module named 'arcaea_pull'`：该版本的包内导入路径有误，请升级到 v0.2.2 或更新版本。
-- `flash_test` 成功但未自动发 APK：这是 v0.2.3 的设计；自动分发属于后续版本。
+- 状态显示 `AUTO_FLASH_MISCONFIGURED`：启用了 `auto_flash_transfer`，但没有同时
+  启用 `auto_download`；插件会拒绝隐式下载和自动分发。
+- 状态显示多个 aiocqhttp 实例：配置 `flash_transfer_platform_id` 或
+  `flash_transfer_self_id`，直到只匹配一个活动实例。
 
 ## 开发与测试
 

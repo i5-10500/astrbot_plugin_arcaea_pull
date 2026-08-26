@@ -9,7 +9,11 @@ ArcaeaApiClient -> UpdateChecker -> Notifier
                          +-------> Downloader -> downloaded APK
                                                 |          |
                                                 |          +-> future Extractor
-                                                +------------> FlashTransferBackend
+                                                +------------> DistributionService
+                                                                  |
+                                        Context.platform_manager -> BackendProvider
+                                                                  |
+                                                                  +-> NapCat backend
 ```
 
 `UpdateChecker` serializes scheduled and manual checks with one `asyncio.Lock`.
@@ -36,8 +40,17 @@ directory. Its schema version is explicit and writes use a temporary file plus
 atomic replacement. Invalid JSON is quarantined with a timestamp before a clean
 state is created.
 
+Schema v2 migrates v1 state in place and adds per-version, per-target distribution
+records. A successful record is reused only when its APK SHA-256 also matches;
+failed or pending records remain eligible for a later retry. Removed allowlist
+targets are not processed, while newly added targets have independent state.
+
 Notification and Flash Transfer allowlists deliberately use different identity
 types: notifications store AstrBot UMO values, while the NapCat adapter consumes
 QQ group IDs. The adapter boundary is the only layer that knows NapCat action
 names and payload fields.
+
+`BackendProvider` reads the active platform instances for each distribution round.
+It selects only aiocqhttp, applies optional platform-ID and bot-self-ID selectors,
+and fails closed on ambiguity. No message event or resolved bot client is retained.
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 
@@ -31,3 +32,37 @@ class CheckResult:
     downloaded: DownloadRecord | None = None
     notification_error: str | None = None
 
+
+class DistributionStatus(str, Enum):
+    PENDING = "pending"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class DistributionTargetResult:
+    target: str
+    status: DistributionStatus
+    skipped: bool = False
+    file_set_id: str | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DistributionResult:
+    version: str
+    targets: tuple[DistributionTargetResult, ...]
+
+    @property
+    def succeeded(self) -> int:
+        return sum(
+            item.status == DistributionStatus.SUCCESS and not item.skipped for item in self.targets
+        )
+
+    @property
+    def failed(self) -> int:
+        return sum(item.status == DistributionStatus.FAILED for item in self.targets)
+
+    @property
+    def skipped(self) -> int:
+        return sum(item.skipped for item in self.targets)
