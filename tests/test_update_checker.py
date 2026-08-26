@@ -90,3 +90,22 @@ async def test_concurrent_checks_are_serialized_and_do_not_duplicate_notificatio
     assert sum(result.changed for result in results) == 1
     assert sent == ["sent"]
 
+
+@pytest.mark.asyncio
+async def test_auto_download_reenters_downloader_when_version_is_unchanged(tmp_path):
+    calls = []
+
+    class Downloader:
+        async def download(self, artifact):
+            calls.append(artifact.version)
+            return None
+
+    checker = UpdateChecker(
+        FakeApi(RemoteArtifact("1", "https://x/a")),
+        StateManager(tmp_path / "state.json"),
+        downloader=Downloader(),
+        auto_download=True,
+    )
+    await checker.check()
+    await checker.check()
+    assert calls == ["1", "1"]

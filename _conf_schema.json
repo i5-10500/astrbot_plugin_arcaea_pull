@@ -45,12 +45,12 @@
     "default": false
   },
   "auto_download": {
-    "description": "发现版本变化后自动下载 APK",
+    "description": "自动确保当前版本 APK 已下载；失败会在后续检查重试",
     "type": "bool",
     "default": false
   },
   "auto_flash_transfer": {
-    "description": "预留配置；v0.2.3 不会自动分发 APK",
+    "description": "将已下载 APK 自动闪传到白名单群；必须同时启用 auto_download",
     "type": "bool",
     "default": false
   },
@@ -58,6 +58,26 @@
     "description": "允许接收 QQ 闪传的群号白名单",
     "type": "list",
     "default": []
+  },
+  "flash_transfer_platform_id": {
+    "description": "多 aiocqhttp 实例时指定 AstrBot 平台 ID；单实例留空",
+    "type": "string",
+    "default": ""
+  },
+  "flash_transfer_self_id": {
+    "description": "多 aiocqhttp 实例时指定机器人 QQ 号；单实例留空",
+    "type": "string",
+    "default": ""
+  },
+  "notify_on_distribution_success": {
+    "description": "闪传至少一个新目标成功时通知",
+    "type": "bool",
+    "default": true
+  },
+  "notify_on_distribution_failure": {
+    "description": "闪传目标失败时通知",
+    "type": "bool",
+    "default": true
   },
   "request_timeout": {
     "description": "APK 元数据 HTTP 请求的总超时秒数",

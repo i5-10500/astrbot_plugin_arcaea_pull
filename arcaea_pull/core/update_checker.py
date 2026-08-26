@@ -64,7 +64,10 @@ class UpdateChecker:
                         notification_error = str(exc)
 
             downloaded = None
-            if changed and self.auto_download and self.downloader is not None:
+            # Re-enter the downloader for the current remote version on every check.
+            # It validates and reuses a completed file, while a missing/failed prior
+            # download is retried even when the remote version itself is unchanged.
+            if self.auto_download and self.downloader is not None:
                 downloaded = await self.downloader.download(artifact)
 
             return CheckResult(
@@ -74,4 +77,3 @@ class UpdateChecker:
                 downloaded=downloaded,
                 notification_error=notification_error,
             )
-

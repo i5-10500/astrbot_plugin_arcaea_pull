@@ -4,9 +4,9 @@
 
 This repository contains `astrbot_plugin_arcaea_pull`, an AstrBot plugin that
 checks the Arcaea China APK feed, optionally downloads APKs safely, and exposes
-an experimental NapCat QQ Flash Transfer diagnostic path.
+an idempotent NapCat QQ Flash Transfer distribution path.
 
-The current release target is `v0.2.3`. APK extraction is explicitly out of
+The current release target is `v0.3.0`. APK extraction is explicitly out of
 scope. Flash Transfer and future extraction are independent consumers of a
 successful download.
 
@@ -38,6 +38,14 @@ admin-only small-file diagnostic on the deployment machine.
 - `notify_targets` and `flash_transfer_targets` are separate allowlists.
 - Never treat a normal QQ file message as successful QQ Flash Transfer.
 - Never send an APK to a target outside `flash_transfer_targets`.
+- Resolve the active aiocqhttp client from `Context.platform_manager` for every
+  distribution round; never cache a message event or adapter client.
+- Fail closed when multiple aiocqhttp platforms remain after configured
+  platform-ID/self-ID selectors are applied.
+- Distribution identity is version + target + APK SHA-256. Skip a matching
+  success, retry failures, and treat newly allowlisted targets independently.
+- `auto_flash_transfer` requires `auto_download`; never hide a download inside
+  `/apull distribute` or an invalid automatic configuration.
 - Do not commit secrets, runtime state, APKs, partial downloads, or research
   checkouts.
 - Keep project licensing consistently declared as `AGPL-3.0-or-later`; do not

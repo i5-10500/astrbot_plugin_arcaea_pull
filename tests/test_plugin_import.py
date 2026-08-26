@@ -79,7 +79,7 @@ def test_release_imports_through_astrbot_package_path(tmp_path):
         module = importlib.import_module(
             "data.plugins.astrbot_plugin_arcaea_pull.main"
         )
-        assert module.__version__ == "0.2.3"
+        assert module.__version__ == "0.3.0"
         assert module.ArcaeaPullPlugin.__module__ == module.__name__
         plugin = module.ArcaeaPullPlugin(object(), AstrBotConfig())
         assert plugin.downloader._client_timeout().total is None

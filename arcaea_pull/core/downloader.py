@@ -126,7 +126,7 @@ class Downloader:
             finally:
                 part_path.unlink(missing_ok=True)
             if attempt + 1 < self.retry_count:
-                await self._sleep(min(2 ** attempt, 4))
+                await self._sleep(min(2**attempt, 4))
 
         message = f"download failed after {self.retry_count} attempt(s): {last_error}"
         self.state.record_download_failure(
@@ -136,6 +136,11 @@ class Downloader:
             error=message,
         )
         raise DownloadError(message) from last_error
+
+    def existing_record(self, artifact: RemoteArtifact) -> DownloadRecord | None:
+        """Return a validated local record without downloading anything."""
+        filename = f"arcaea_{safe_version_component(artifact.version)}.apk"
+        return self._existing_record(artifact, self.output_dir / filename)
 
     async def _download_once(self, url: str, part_path: Path) -> None:
         session = await self._get_session()
@@ -156,9 +161,7 @@ class Downloader:
                     f"incomplete download: expected {expected_size} byte(s), received {received}"
                 )
 
-    def _existing_record(
-        self, artifact: RemoteArtifact, final_path: Path
-    ) -> DownloadRecord | None:
+    def _existing_record(self, artifact: RemoteArtifact, final_path: Path) -> DownloadRecord | None:
         download_state = self.state.load()["download"]
         if download_state.get("last_downloaded_version") != artifact.version:
             return None
