@@ -1,0 +1,9 @@
+name: astrbot_plugin_arcaea_pull
+display_name: Arcaea Pull
+desc: Arcaea 中国大陆版 APK 更新检测、可靠下载与 QQ 闪传 PoC
+version: 0.2.1
+author: Yicai Liu
+repo: https://github.com/i5-10500/astrbot_plugin_arcaea_pull
+support_platforms:
+  - aiocqhttp
+

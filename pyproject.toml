@@ -1,0 +1,18 @@
+[project]
+name = "astrbot-plugin-arcaea-pull"
+version = "0.2.1"
+description = "Arcaea China APK update and download infrastructure for AstrBot"
+requires-python = ">=3.10"
+dependencies = ["aiohttp>=3.9,<4"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
