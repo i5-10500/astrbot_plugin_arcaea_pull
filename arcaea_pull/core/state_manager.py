@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from arcaea_pull.models import DownloadRecord
+
 SCHEMA_VERSION = 1
 
 
@@ -96,6 +98,38 @@ class StateManager:
         state["notification"]["last_notified_version"] = version
         self.save(state)
 
+    def record_download_success(self, record: DownloadRecord) -> None:
+        state = self.load()
+        values = {
+            "last_downloaded_version": record.version,
+            "source_url": record.source_url,
+            "path": str(record.path),
+            "size": record.size,
+            "sha256": record.sha256,
+            "downloaded_at": record.downloaded_at,
+        }
+        state["download"].update(values)
+        state["download"]["last_attempt"] = {**values, "success": True}
+        self.save(state)
+
+    def record_download_failure(
+        self,
+        *,
+        version: str,
+        source_url: str,
+        attempted_at: str,
+        error: str,
+    ) -> None:
+        state = self.load()
+        state["download"]["last_attempt"] = {
+            "version": version,
+            "source_url": source_url,
+            "attempted_at": attempted_at,
+            "success": False,
+            "error": error,
+        }
+        self.save(state)
+
     @staticmethod
     def _validate(state: object) -> None:
         if not isinstance(state, dict):
@@ -105,4 +139,3 @@ class StateManager:
         for key in ("remote", "observed", "notification", "download", "distribution"):
             if not isinstance(state.get(key), dict):
                 raise StateError(f"state field {key!r} must be an object")
-

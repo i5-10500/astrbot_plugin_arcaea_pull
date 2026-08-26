@@ -10,6 +10,10 @@ The current release target is `v0.2.1`. APK extraction is explicitly out of
 scope. Flash Transfer and future extraction are independent consumers of a
 successful download.
 
+The verified minimum NapCat release exposing both `create_flash_task` and
+`send_flash_msg` is `v4.10.47`; live compatibility still requires the
+admin-only small-file diagnostic on the deployment machine.
+
 ## Layout
 
 - `main.py`: thin AstrBot lifecycle and command adapter.
@@ -60,4 +64,3 @@ members and SHA-256 after building.
 Flash Transfer compatibility is based on the official source revisions recorded
 in `docs/flash-transfer-poc.md`. Re-check those sources before changing action
 payloads or claiming compatibility with a newer NapCat/AstrBot release.
-
