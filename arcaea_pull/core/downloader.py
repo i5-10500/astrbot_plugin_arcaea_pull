@@ -43,6 +43,7 @@ class Downloader:
         retry_count: int = 3,
         min_size: int = 1024,
         chunk_size: int = 1024 * 1024,
+        keep_old_versions: bool = True,
         session: aiohttp.ClientSession | Any | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
@@ -53,6 +54,7 @@ class Downloader:
         self.retry_count = max(int(retry_count), 1)
         self.min_size = max(int(min_size), 1)
         self.chunk_size = max(int(chunk_size), 1)
+        self.keep_old_versions = bool(keep_old_versions)
         self._session = session
         self._owns_session = session is None
         self._sleep = sleep
@@ -61,7 +63,7 @@ class Downloader:
     async def _get_session(self) -> aiohttp.ClientSession | Any:
         if self._session is None:
             timeout = aiohttp.ClientTimeout(
-                total=None,
+                total=self.timeout,
                 connect=min(self.timeout, 10),
                 sock_read=self.timeout,
             )
@@ -104,6 +106,8 @@ class Downloader:
                     downloaded_at=self.clock().astimezone(timezone.utc).isoformat(),
                 )
                 self.state.record_download_success(record)
+                if not self.keep_old_versions:
+                    await asyncio.to_thread(self._cleanup_old_versions, final_path)
                 return record
             except (asyncio.TimeoutError, aiohttp.ClientError, ArtifactValidationError) as exc:
                 last_error = exc
@@ -173,6 +177,17 @@ class Downloader:
             reused=True,
         )
 
+    def _cleanup_old_versions(self, current_path: Path) -> None:
+        output_root = self.output_dir.resolve()
+        for candidate in self.output_dir.glob("arcaea_*.apk"):
+            try:
+                resolved = candidate.resolve()
+                if resolved.parent == output_root and resolved != current_path.resolve():
+                    resolved.unlink(missing_ok=True)
+            except OSError:
+                # Retention cleanup is best-effort and must not invalidate a verified download.
+                continue
+
 
 def _content_length(response: Any) -> int | None:
     value = getattr(response, "content_length", None)
@@ -185,4 +200,3 @@ def _content_length(response: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
-

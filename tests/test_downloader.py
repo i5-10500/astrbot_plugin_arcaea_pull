@@ -52,10 +52,13 @@ class FakeSession:
 
     def get(self, *_args, **_kwargs):
         self.calls += 1
-        return self.responses.popleft()
+        response = self.responses.popleft()
+        if isinstance(response, BaseException):
+            raise response
+        return response
 
 
-def make_downloader(tmp_path, responses, retry_count=1):
+def make_downloader(tmp_path, responses, retry_count=1, keep_old_versions=True):
     state = StateManager(tmp_path / "state.json")
     downloader = Downloader(
         tmp_path / "downloads",
@@ -63,6 +66,7 @@ def make_downloader(tmp_path, responses, retry_count=1):
         session=FakeSession(responses),
         min_size=1,
         retry_count=retry_count,
+        keep_old_versions=keep_old_versions,
         sleep=lambda _: asyncio.sleep(0),
     )
     return downloader, state
@@ -98,6 +102,18 @@ async def test_http_failure_is_diagnostic(tmp_path):
     downloader, _state = make_downloader(tmp_path, [FakeResponse(status=404)])
     with pytest.raises(DownloadError, match="HTTP 404"):
         await downloader.download(RemoteArtifact("1", "https://x/a.apk"))
+
+
+@pytest.mark.asyncio
+async def test_timeout_is_retried_then_recorded(tmp_path):
+    downloader, state = make_downloader(
+        tmp_path,
+        [asyncio.TimeoutError(), asyncio.TimeoutError()],
+        retry_count=2,
+    )
+    with pytest.raises(DownloadError, match="2 attempt"):
+        await downloader.download(RemoteArtifact("1", "https://x/a.apk"))
+    assert state.load()["download"]["last_attempt"]["success"] is False
 
 
 @pytest.mark.asyncio
@@ -139,3 +155,17 @@ async def test_successful_version_is_not_downloaded_twice(tmp_path):
     assert first.path == second.path
     assert second.reused
     assert downloader._session.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_old_versions_can_be_removed_after_new_success(tmp_path):
+    data = apk_bytes()
+    downloader, _state = make_downloader(
+        tmp_path,
+        [FakeResponse(data), FakeResponse(data)],
+        keep_old_versions=False,
+    )
+    old = await downloader.download(RemoteArtifact("1", "https://x/1.apk"))
+    new = await downloader.download(RemoteArtifact("2", "https://x/2.apk"))
+    assert not old.path.exists()
+    assert new.path.exists()
