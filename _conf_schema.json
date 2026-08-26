@@ -1,13 +1,23 @@
 {
   "check_enabled": {
-    "description": "启用每日更新检查",
+    "description": "启用定时更新检查",
     "type": "bool",
     "default": true
   },
-  "check_time": {
-    "description": "每日检查时间（HH:MM）",
-    "type": "string",
-    "default": "04:00"
+  "check_interval_minutes": {
+    "description": "检查间隔（分钟）",
+    "type": "int",
+    "default": 30,
+    "slider": {
+      "min": 1,
+      "max": 1440,
+      "step": 1
+    }
+  },
+  "extra_check_times": {
+    "description": "额外检查时间列表，格式为 HH:MM 或 HH:MM:SS",
+    "type": "list",
+    "default": []
   },
   "timezone": {
     "description": "IANA 时区",
@@ -40,7 +50,7 @@
     "default": false
   },
   "auto_flash_transfer": {
-    "description": "预留配置；v0.2.1 不会自动分发 APK",
+    "description": "预留配置；v0.2.3 不会自动分发 APK",
     "type": "bool",
     "default": false
   },
@@ -50,9 +60,19 @@
     "default": []
   },
   "request_timeout": {
-    "description": "HTTP 总超时秒数",
+    "description": "APK 元数据 HTTP 请求的总超时秒数",
     "type": "int",
     "default": 30
+  },
+  "download_connect_timeout": {
+    "description": "APK 下载连接建立超时秒数",
+    "type": "int",
+    "default": 30
+  },
+  "download_read_timeout": {
+    "description": "APK 下载相邻数据块之间允许的最大空闲秒数；不限制下载总时长",
+    "type": "int",
+    "default": 120
   },
   "retry_count": {
     "description": "HTTP 最大尝试次数",

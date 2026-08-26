@@ -11,14 +11,13 @@ from typing import Any
 
 import aiohttp
 
-from arcaea_pull.models import DownloadRecord, RemoteArtifact
-from arcaea_pull.utils.filesystem import (
+from ..models import DownloadRecord, RemoteArtifact
+from ..utils.filesystem import (
     ArtifactValidationError,
     safe_version_component,
     validate_apk,
 )
-from arcaea_pull.utils.hashing import sha256_file
-
+from ..utils.hashing import sha256_file
 from .api_client import USER_AGENT, require_https
 from .state_manager import StateManager
 
@@ -39,7 +38,8 @@ class Downloader:
         output_dir: str | Path,
         state: StateManager,
         *,
-        timeout: float = 30,
+        connect_timeout: float = 30,
+        read_timeout: float = 120,
         retry_count: int = 3,
         min_size: int = 1024,
         chunk_size: int = 1024 * 1024,
@@ -50,7 +50,8 @@ class Downloader:
     ) -> None:
         self.output_dir = Path(output_dir)
         self.state = state
-        self.timeout = max(float(timeout), 0.1)
+        self.connect_timeout = max(float(connect_timeout), 0.1)
+        self.read_timeout = max(float(read_timeout), 0.1)
         self.retry_count = max(int(retry_count), 1)
         self.min_size = max(int(min_size), 1)
         self.chunk_size = max(int(chunk_size), 1)
@@ -62,16 +63,20 @@ class Downloader:
 
     async def _get_session(self) -> aiohttp.ClientSession | Any:
         if self._session is None:
-            timeout = aiohttp.ClientTimeout(
-                total=self.timeout,
-                connect=min(self.timeout, 10),
-                sock_read=self.timeout,
-            )
             self._session = aiohttp.ClientSession(
-                timeout=timeout,
+                timeout=self._client_timeout(),
                 headers={"User-Agent": USER_AGENT},
             )
         return self._session
+
+    def _client_timeout(self) -> aiohttp.ClientTimeout:
+        """Limit connection/stalls without limiting the complete APK transfer."""
+        return aiohttp.ClientTimeout(
+            total=None,
+            connect=self.connect_timeout,
+            sock_connect=self.connect_timeout,
+            sock_read=self.read_timeout,
+        )
 
     async def close(self) -> None:
         if self._owns_session and self._session is not None:

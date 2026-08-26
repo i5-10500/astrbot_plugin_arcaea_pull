@@ -12,21 +12,21 @@ from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.star import Context, Star, StarTools, register
 
-from arcaea_pull import __version__
-from arcaea_pull.core.api_client import ArcaeaApiClient
-from arcaea_pull.core.downloader import Downloader
-from arcaea_pull.core.notifier import NotificationError, Notifier
-from arcaea_pull.core.scheduler import ScheduleConfigError, seconds_until_next
-from arcaea_pull.core.state_manager import StateManager
-from arcaea_pull.core.update_checker import UpdateChecker
-from arcaea_pull.distribution import NapCatFlashTransferBackend
+from .arcaea_pull import __version__
+from .arcaea_pull.core.api_client import ArcaeaApiClient
+from .arcaea_pull.core.downloader import Downloader
+from .arcaea_pull.core.notifier import NotificationError, Notifier
+from .arcaea_pull.core.scheduler import ScheduleConfigError, seconds_until_next
+from .arcaea_pull.core.state_manager import StateManager
+from .arcaea_pull.core.update_checker import UpdateChecker
+from .arcaea_pull.distribution import NapCatFlashTransferBackend
 
 PLUGIN_NAME = "astrbot_plugin_arcaea_pull"
 
 
 @register(
     PLUGIN_NAME,
-    "Yicai Liu",
+    "i5-10500",
     "Arcaea 中国大陆版 APK 更新检测、可靠下载与 QQ 闪传 PoC",
     __version__,
     "https://github.com/i5-10500/astrbot_plugin_arcaea_pull",
@@ -38,13 +38,14 @@ class ArcaeaPullPlugin(Star):
         self.data_dir = StarTools.get_data_dir(PLUGIN_NAME)
         self.state = StateManager(self.data_dir / "state.json")
         self.pipeline_lock = asyncio.Lock()
-        timeout = float(config.get("request_timeout", 30))
+        request_timeout = float(config.get("request_timeout", 30))
         retries = int(config.get("retry_count", 3))
-        self.api_client = ArcaeaApiClient(timeout=timeout, retry_count=retries)
+        self.api_client = ArcaeaApiClient(timeout=request_timeout, retry_count=retries)
         self.downloader = Downloader(
             self.data_dir / "downloads",
             self.state,
-            timeout=timeout,
+            connect_timeout=float(config.get("download_connect_timeout", 30)),
+            read_timeout=float(config.get("download_read_timeout", 120)),
             retry_count=retries,
             keep_old_versions=bool(config.get("keep_old_versions", True)),
         )
@@ -63,20 +64,16 @@ class ArcaeaPullPlugin(Star):
         self._scheduler_task: asyncio.Task[None] | None = None
 
     async def initialize(self) -> None:
-        """Start exactly one timezone-aware daily scheduler task."""
+        """Start exactly one timezone-aware scheduler task."""
         self.state.load()
         if bool(self.config.get("check_enabled", True)):
             try:
-                seconds_until_next(
-                    datetime.now(timezone.utc),
-                    str(self.config.get("check_time", "04:00")),
-                    str(self.config.get("timezone", "Asia/Shanghai")),
-                )
+                self._seconds_until_next_check()
             except ScheduleConfigError as exc:
                 logger.error(f"Arcaea Pull scheduler disabled: {exc}")
                 return
             self._scheduler_task = asyncio.create_task(
-                self._scheduler_loop(), name="arcaea-pull-daily-check"
+                self._scheduler_loop(), name="arcaea-pull-scheduled-check"
             )
 
     async def terminate(self) -> None:
@@ -97,11 +94,7 @@ class ArcaeaPullPlugin(Star):
 
     async def _scheduler_loop(self) -> None:
         while True:
-            delay = seconds_until_next(
-                datetime.now(timezone.utc),
-                str(self.config.get("check_time", "04:00")),
-                str(self.config.get("timezone", "Asia/Shanghai")),
-            )
+            delay = self._seconds_until_next_check()
             await asyncio.sleep(delay)
             try:
                 await self._check_with_download_notice()
@@ -112,6 +105,14 @@ class ArcaeaPullPlugin(Star):
                 if bool(self.config.get("notify_on_error", False)):
                     with suppress(NotificationError):
                         await self.notifier.broadcast(f"Arcaea 更新检查失败：{exc}")
+
+    def _seconds_until_next_check(self) -> float:
+        return seconds_until_next(
+            datetime.now(timezone.utc),
+            str(self.config.get("timezone", "Asia/Shanghai")),
+            interval_minutes=self.config.get("check_interval_minutes", 30),
+            extra_check_times=_string_list(self.config.get("extra_check_times", [])),
+        )
 
     async def _check_with_download_notice(self):
         result = await self.checker.check()
@@ -145,6 +146,7 @@ class ArcaeaPullPlugin(Star):
                     f"last_seen_version: {observed}",
                     f"last_downloaded_version: {downloaded}",
                     f"check_enabled: {bool(self.config.get('check_enabled', True))}",
+                    f"schedule: {_schedule_summary(self.config)}",
                     f"auto_download: {bool(self.config.get('auto_download', False))}",
                     "FlashTransfer: READY_UNVERIFIED "
                     "(NapCat >= v4.10.47; 需执行白名单小文件实测)",
@@ -235,3 +237,16 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, (list, tuple, set)):
         return []
     return [str(item) for item in value if str(item)]
+
+
+def _schedule_summary(config: AstrBotConfig) -> str:
+    extras = _string_list(config.get("extra_check_times", []))
+    interval = config.get("check_interval_minutes", 30)
+    if (
+        isinstance(interval, bool)
+        or not isinstance(interval, int)
+        or not 1 <= interval <= 1440
+    ):
+        return "INVALID"
+    primary = f"every {interval}m from local 00:00"
+    return f"{primary}; extras={extras or 'none'}"

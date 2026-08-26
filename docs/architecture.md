@@ -21,6 +21,16 @@ Downloads are streamed into a same-directory `.apk.part` file. Content length,
 minimum size, ZIP signature, ZIP readability, and SHA-256 are checked before an
 atomic `os.replace` publishes the final `arcaea_<version>.apk`.
 
+Metadata requests retain a short whole-request deadline. APK transfers instead
+use connection and socket-read inactivity deadlines with no whole-transfer
+deadline, so a continuously progressing multi-gigabyte download is not aborted
+because of its total duration.
+
+The scheduler uses a positive whole-minute interval anchored at local midnight.
+Extra `HH:MM`/`HH:MM:SS` wall times are merged into that schedule; coincident
+triggers result in one pipeline run because the next trigger is always calculated
+strictly after the current time.
+
 Runtime state lives in AstrBot's `data/plugin_data/astrbot_plugin_arcaea_pull`
 directory. Its schema version is explicit and writes use a temporary file plus
 atomic replacement. Invalid JSON is quarantined with a timestamp before a clean

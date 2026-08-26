@@ -7,8 +7,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Protocol
 
-from arcaea_pull.models import CheckResult, DownloadRecord, RemoteArtifact
-
+from ..models import CheckResult, DownloadRecord, RemoteArtifact
 from .api_client import ArcaeaApiClient
 from .notifier import NotificationError, Notifier
 from .state_manager import StateManager
