@@ -89,8 +89,8 @@
     "type": "string",
     "default": ""
   },
-  "apkanalyzer_path": {
-    "description": "官方 apkanalyzer 路径；留空时从 PATH 或 Android SDK 查找",
+  "aapt2_path": {
+    "description": "官方 aapt2 路径；留空时从 PATH 或 Android SDK 查找",
     "type": "string",
     "default": ""
   },

@@ -18,14 +18,12 @@ def resolve_apksigner(configured: str = "") -> Path:
     return _resolve("apksigner", configured, candidates)
 
 
-def resolve_apkanalyzer(configured: str = "") -> Path:
+def resolve_aapt2(configured: str = "") -> Path:
     try:
-        candidates = _sdk_candidates("cmdline-tools", "apkanalyzer", bin_subdir=True)
+        candidates = _sdk_candidates("build-tools", "aapt2")
     except OSError as exc:
-        raise ToolUnavailableError(
-            f"could not inspect Android SDK command-line tools: {exc}"
-        ) from exc
-    return _resolve("apkanalyzer", configured, candidates)
+        raise ToolUnavailableError(f"could not inspect Android SDK build-tools: {exc}") from exc
+    return _resolve("aapt2", configured, candidates)
 
 
 def _resolve(name: str, configured: str, candidates: list[Path]) -> Path:
@@ -43,7 +41,7 @@ def _resolve(name: str, configured: str, candidates: list[Path]) -> Path:
     raise ToolUnavailableError(f"{name} not found in PATH or Android SDK; configure {name}_path")
 
 
-def _sdk_candidates(component: str, tool: str, *, bin_subdir: bool = False) -> list[Path]:
+def _sdk_candidates(component: str, tool: str) -> list[Path]:
     suffixes = (".bat", ".exe", "") if os.name == "nt" else ("",)
     roots: list[Path] = []
     for variable in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
@@ -63,8 +61,7 @@ def _sdk_candidates(component: str, tool: str, *, bin_subdir: bool = False) -> l
             reverse=True,
         )
         for version in versions:
-            tool_root = version / "bin" if bin_subdir else version
-            found.extend(tool_root / f"{tool}{suffix}" for suffix in suffixes)
+            found.extend(version / f"{tool}{suffix}" for suffix in suffixes)
     return found
 
 

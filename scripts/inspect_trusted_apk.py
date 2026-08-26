@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 from arcaea_pull.verification.apksigner_backend import ApkSignerBackend  # noqa: E402
 from arcaea_pull.verification.manifest_inspector import ApkManifestInspector  # noqa: E402
 from arcaea_pull.verification.tools import (  # noqa: E402
-    resolve_apkanalyzer,
+    resolve_aapt2,
     resolve_apksigner,
 )
 
@@ -28,7 +28,7 @@ def parser() -> argparse.ArgumentParser:
     )
     value.add_argument("apk", type=Path)
     value.add_argument("--apksigner", default="", help="explicit apksigner path")
-    value.add_argument("--apkanalyzer", default="", help="explicit apkanalyzer path")
+    value.add_argument("--aapt2", default="", help="explicit aapt2 path")
     value.add_argument("--timeout", type=float, default=60)
     return value
 
@@ -41,7 +41,7 @@ async def inspect(args: argparse.Namespace) -> None:
         resolve_apksigner(args.apksigner), timeout=args.timeout
     ).verify(apk)
     manifest = await ApkManifestInspector(
-        resolve_apkanalyzer(args.apkanalyzer), timeout=args.timeout
+        resolve_aapt2(args.aapt2), timeout=args.timeout
     ).inspect(apk)
     print("Cryptographic signature: VALID")
     print(f"Package: {manifest.package_name}")

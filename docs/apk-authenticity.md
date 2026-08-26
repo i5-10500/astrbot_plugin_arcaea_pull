@@ -1,25 +1,28 @@
 # APK Authenticity / 真实性安全门
 
-v0.3.1 在下载和 QQ 闪传之间加入强制真实性验证。文件 SHA-256 只说明“当前文件
+v0.3.2 在下载和 QQ 闪传之间保留强制真实性验证。文件 SHA-256 只说明“当前文件
 是否与已记录文件相同”，不能证明发行者身份；发行者身份来自完整 APK 密码学签名
 验证和用户固定的 signer 证书 SHA-256。
 
 ## 官方工具依赖
 
-- Android SDK Build Tools 的 `apksigner`：执行
-  `verify --verbose --print-certs -Werr`。只有退出码为 0、至少一个签名方案明确验证
-  成功、且能完整解析 signer SHA-256 时才接受。
-- Android SDK Command-Line Tools 的 `apkanalyzer`：分别执行
-  `manifest application-id`、`manifest version-name` 和 `manifest version-code`。
+- Android SDK Build Tools 的 `apksigner`：执行 `verify --verbose --print-certs`。
+  只有退出码为 0、至少一个 v2 或更新的整包签名方案明确验证成功、且能完整解析
+  signer SHA-256 时才接受；不因仅针对 v1/JAR 的 `META-INF` 警告误拒绝已有 v2
+  保护的官方 APK。
+- 同一 Build Tools 组件的 `aapt2`：同时执行 `dump badging` 和
+  `dump xmltree ... --file AndroidManifest.xml`，严格解析并交叉核对 package、
+  versionName、versionCode；从 xmltree 读取 versionCodeMajor 并合成长版本码。
 
 官方参考：
 
 - <https://developer.android.com/tools/apksigner>
-- <https://developer.android.com/tools/apkanalyzer>
+- <https://developer.android.com/tools/aapt2>
 - <https://developer.android.com/tools/releases/build-tools>
 
 工具会按以下顺序发现：显式配置路径、PATH、`ANDROID_HOME` / `ANDROID_SDK_ROOT`
-下的最新版相应组件。插件不会捆绑 Android SDK。任一工具缺失、超时、返回非预期
+下的最新 Build Tools 组件。最低使用 Build Tools 26.0.2，且无需安装 Command-Line
+Tools。插件不会捆绑 Android SDK。任一工具缺失、超时、返回非预期
 输出或无法启动都会进入 `SECURITY_HOLD`，不会警告后继续。
 
 ## 信任根初始化

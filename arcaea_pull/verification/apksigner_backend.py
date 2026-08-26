@@ -43,7 +43,6 @@ class ApkSignerBackend:
                 "verify",
                 "--verbose",
                 "--print-certs",
-                "-Werr",
                 str(path),
             ),
             timeout=self.timeout,
@@ -60,6 +59,10 @@ class ApkSignerBackend:
         if not signers or not schemes:
             raise MalformedToolOutputError(
                 "apksigner success output lacked signer SHA-256 or a verified signature scheme"
+            )
+        if not any(int(scheme[1:].split(".", maxsplit=1)[0]) >= 2 for scheme in schemes):
+            raise SignatureInvalidError(
+                "APK lacks a verified v2-or-newer whole-file signature scheme"
             )
         return SignatureVerificationResult(
             signer_certificate_sha256=signers,

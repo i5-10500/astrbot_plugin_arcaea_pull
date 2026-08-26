@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
-ARCHIVE = DIST / "astrbot_plugin_arcaea_pull-v0.3.1.zip"
+ARCHIVE = DIST / "astrbot_plugin_arcaea_pull-v0.3.2.zip"
 REQUIRED_ROOT_FILES = (
     "main.py",
     "metadata.yaml",

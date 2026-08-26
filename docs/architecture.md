@@ -50,8 +50,10 @@ failed or pending records remain eligible for a later retry. Removed allowlist
 targets are not processed, while newly added targets have independent state.
 
 Schema v3 adds verification state without changing distribution successes.
-`apksigner` must cryptographically accept the complete APK and emit parseable
-signer certificate SHA-256 values. `apkanalyzer` then reads the binary manifest.
+`apksigner` must cryptographically accept a v2-or-newer whole-file signature and
+emit parseable signer certificate SHA-256 values. Build Tools `aapt2` then reads
+the binary manifest through independent `badging` and `xmltree` views, cross-checks
+their identity fields, and combines `versionCodeMajor` with the base version code.
 The verifier pins every current signer, requires exact configured package and API
 versionName equality, and rejects versionCode rollback. It recomputes file SHA-256
 after the tools finish before publishing a `VerifiedArtifact`.
