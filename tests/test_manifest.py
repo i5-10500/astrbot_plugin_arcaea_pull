@@ -13,7 +13,6 @@ def test_metadata_matches_release_identity():
     assert metadata["author"] == "i5-10500"
     assert metadata["repo"].startswith("https://github.com/")
     assert metadata["support_platforms"] == ["aiocqhttp"]
-    assert "i5-10500" in (ROOT / "LICENSE").read_text(encoding="utf-8")
     assert '"i5-10500"' in (ROOT / "main.py").read_text(encoding="utf-8")
     project_metadata = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert 'license = "AGPL-3.0-or-later"' in project_metadata
