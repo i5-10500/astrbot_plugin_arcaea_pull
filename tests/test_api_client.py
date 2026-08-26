@@ -78,4 +78,3 @@ async def test_timeout_retries_then_fails():
     client = ArcaeaApiClient(session=session, retry_count=2, sleep=lambda _: asyncio.sleep(0))
     with pytest.raises(ApiClientError, match="2 attempt"):
         await client.fetch()
-

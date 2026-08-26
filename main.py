@@ -20,6 +20,8 @@ from .arcaea_pull.core.scheduler import ScheduleConfigError, seconds_until_next
 from .arcaea_pull.core.state_manager import StateManager
 from .arcaea_pull.core.update_checker import UpdateChecker
 from .arcaea_pull.distribution import BackendProvider, DistributionService
+from .arcaea_pull.models import VerificationVerdict
+from .arcaea_pull.verification import AuthenticityVerifier
 
 PLUGIN_NAME = "astrbot_plugin_arcaea_pull"
 
@@ -27,7 +29,7 @@ PLUGIN_NAME = "astrbot_plugin_arcaea_pull"
 @register(
     PLUGIN_NAME,
     "i5-10500",
-    "Arcaea 中国大陆版 APK 更新检测、可靠下载与 QQ 闪传分发",
+    "Arcaea 中国大陆版 APK 可信下载、真实性验证与 QQ 闪传分发",
     __version__,
     "https://github.com/i5-10500/astrbot_plugin_arcaea_pull",
 )
@@ -41,8 +43,9 @@ class ArcaeaPullPlugin(Star):
         request_timeout = float(config.get("request_timeout", 30))
         retries = int(config.get("retry_count", 3))
         self.api_client = ArcaeaApiClient(timeout=request_timeout, retry_count=retries)
+        downloads_root = self.data_dir / "downloads"
         self.downloader = Downloader(
-            self.data_dir / "downloads",
+            downloads_root / "pending",
             self.state,
             connect_timeout=float(config.get("download_connect_timeout", 30)),
             read_timeout=float(config.get("download_read_timeout", 120)),
@@ -61,6 +64,15 @@ class ArcaeaPullPlugin(Star):
         )
         self.distributor = DistributionService(
             self.state, self.backend_provider.resolve, flash_targets
+        )
+        self.verifier = AuthenticityVerifier(
+            self.state,
+            downloads_root,
+            trusted_signers=_string_list(config.get("trusted_signer_sha256", [])),
+            trusted_package_name=str(config.get("trusted_package_name", "")),
+            apksigner_path=str(config.get("apksigner_path", "")),
+            apkanalyzer_path=str(config.get("apkanalyzer_path", "")),
+            timeout=float(config.get("verification_timeout", 60)),
         )
         self.checker = UpdateChecker(
             self.api_client,
@@ -125,7 +137,11 @@ class ArcaeaPullPlugin(Star):
         )
 
     async def _check_with_download_notice(self):
-        result = await self.checker.check()
+        async with self.pipeline_lock:
+            return await self._check_with_download_notice_locked()
+
+    async def _check_with_download_notice_locked(self):
+        result = await self.checker.check_unlocked()
         if (
             result.downloaded is not None
             and not result.downloaded.reused
@@ -137,14 +153,42 @@ class ArcaeaPullPlugin(Star):
                     f"大小 {result.downloaded.size} 字节，SHA-256 "
                     f"{result.downloaded.sha256}"
                 )
+        verification = None
+        if result.downloaded is not None and bool(self.config.get("verification_enabled", True)):
+            verification = await self.verifier.verify(
+                result.downloaded, expected_version=result.artifact.version
+            )
+            await self._notify_verification_failure(verification, result.artifact.version)
+
         distribution = None
         if bool(self.config.get("auto_flash_transfer", False)):
             if not bool(self.config.get("auto_download", False)):
                 logger.error("AUTO_FLASH_MISCONFIGURED: auto_flash_transfer requires auto_download")
-            elif result.downloaded is not None:
-                distribution = await self.distributor.distribute(result.downloaded)
+            elif not bool(self.config.get("verification_enabled", True)):
+                logger.error(
+                    "CONFIG_SECURITY_ERROR: automatic Flash Transfer requires verification"
+                )
+            elif verification is not None and verification.artifact is not None:
+                distribution = await self.distributor.distribute(verification.artifact)
                 await self._notify_distribution(distribution)
-        return result, distribution
+        return result, verification, distribution
+
+    async def _notify_verification_failure(self, result, version: str) -> None:
+        if result is None or result.verdict == VerificationVerdict.VERIFIED:
+            return
+        if not bool(self.config.get("notify_on_verification_failure", True)):
+            return
+        if not self.state.verification_failure_notification_needed(result.event_key):
+            return
+        try:
+            notified = await self.notifier.broadcast(
+                f"Arcaea C版 {version} 安装包真实性验证失败，已停止自动分发。"
+                f"原因：{result.verdict.value}"
+            )
+        except NotificationError:
+            return
+        if notified:
+            self.state.record_verification_failure_notification(result.event_key)
 
     async def _notify_distribution(self, result) -> None:
         if result.succeeded and bool(self.config.get("notify_on_distribution_success", True)):
@@ -176,12 +220,17 @@ class ArcaeaPullPlugin(Star):
         auto_flash = bool(self.config.get("auto_flash_transfer", False))
         if auto_flash and not auto_download:
             flash_status = "AUTO_FLASH_MISCONFIGURED (需要同时启用 auto_download)"
+        elif auto_flash and not bool(self.config.get("verification_enabled", True)):
+            flash_status = "CONFIG_SECURITY_ERROR (真实性验证被禁用)"
         else:
             try:
                 flash_status = self.backend_provider.resolve().status
             except Exception as exc:  # noqa: BLE001 - status is diagnostic
                 flash_status = f"UNAVAILABLE ({exc})"
         distribution = _distribution_summary(state, observed)
+        verification_status = await asyncio.to_thread(
+            _verification_status, self.config, self.verifier, state, observed
+        )
         yield event.plain_result(
             "\n".join(
                 [
@@ -192,6 +241,15 @@ class ArcaeaPullPlugin(Star):
                     f"schedule: {_schedule_summary(self.config)}",
                     f"auto_download: {auto_download}",
                     f"auto_flash_transfer: {auto_flash}",
+                    f"verification: {verification_status}",
+                    "trusted signer configured: "
+                    + (
+                        "yes"
+                        if _string_list(self.config.get("trusted_signer_sha256", []))
+                        else "no"
+                    ),
+                    "last_verified_version: "
+                    f"{state['verification'].get('last_verified_version') or '未记录'}",
                     f"FlashTransfer: {flash_status}",
                     f"distribution: {distribution}",
                 ]
@@ -203,13 +261,15 @@ class ArcaeaPullPlugin(Star):
     async def check(self, event: AstrMessageEvent):
         """立即检查一次远端版本。"""
         try:
-            result, distribution = await self._check_with_download_notice()
+            result, verification, distribution = await self._check_with_download_notice()
             summary = "检测到版本变化" if result.changed else "版本未变化"
             details = [f"{summary}: {result.artifact.version}"]
             if result.downloaded:
                 details.append(f"APK: {result.downloaded.path}")
             if result.notification_error:
                 details.append(f"通知失败: {result.notification_error}")
+            if verification is not None:
+                details.append(f"真实性验证: {verification.verdict.value}")
             if distribution is not None:
                 details.append(
                     f"闪传: success={distribution.succeeded}, "
@@ -243,20 +303,74 @@ class ArcaeaPullPlugin(Star):
             yield event.plain_result(f"下载失败：{exc}")
 
     @filter.permission_type(filter.PermissionType.ADMIN)
-    @apull.command("distribute")
-    async def distribute(self, event: AstrMessageEvent):
-        """仅分发当前远端版本已可靠下载的 APK，不隐式下载。"""
+    @apull.command("verify")
+    async def verify(self, event: AstrMessageEvent):
+        """验证当前远端版本已下载 APK 的签名、身份与版本。"""
+        if not bool(self.config.get("verification_enabled", True)):
+            yield event.plain_result(
+                "CONFIG_SECURITY_ERROR：verification_enabled 已关闭，无法建立可信产物。"
+            )
+            return
         try:
             async with self.pipeline_lock:
                 artifact = await self.api_client.fetch()
-                record = self.downloader.existing_record(artifact)
-            if record is None:
+                record = await asyncio.to_thread(
+                    self.downloader.existing_record, artifact
+                )
+                if record is not None:
+                    result = await self.verifier.verify(
+                        record, expected_version=artifact.version
+                    )
+                else:
+                    result = None
+            if record is None or result is None:
                 yield event.plain_result(
-                    f"拒绝分发：当前最新版本 {artifact.version} 尚无可靠本地 APK；"
+                    f"无法验证：当前最新版本 {artifact.version} 尚无可靠本地 APK；"
                     "请先执行 /apull download。"
                 )
                 return
-            result = await self.distributor.distribute(record)
+            await self._notify_verification_failure(result, artifact.version)
+            details = [f"verdict={result.verdict.value}", f"reason={result.reason}"]
+            if result.artifact is not None:
+                verified = result.artifact
+                details.extend(
+                    [
+                        f"package={verified.package_name}",
+                        f"versionName={verified.version_name}",
+                        f"versionCode={verified.version_code}",
+                        "signer_sha256=" + ",".join(verified.signer_certificate_sha256),
+                        f"file_sha256={verified.file_sha256}",
+                        f"path={verified.path}",
+                    ]
+                )
+            yield event.plain_result("\n".join(details))
+        except Exception as exc:  # noqa: BLE001 - return diagnostic to admin
+            logger.exception(f"Manual Arcaea APK verification failed: {exc}")
+            yield event.plain_result(f"验证失败：{exc}")
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @apull.command("distribute")
+    async def distribute(self, event: AstrMessageEvent):
+        """仅分发当前远端版本已可靠下载的 APK，不隐式下载。"""
+        if not bool(self.config.get("verification_enabled", True)):
+            yield event.plain_result("CONFIG_SECURITY_ERROR：真实性验证被禁用，拒绝分发。")
+            return
+        try:
+            async with self.pipeline_lock:
+                artifact = await self.api_client.fetch()
+                verified = await asyncio.to_thread(
+                    self.verifier.load_verified, artifact.version
+                )
+                if verified is not None:
+                    result = await self.distributor.distribute(verified)
+                else:
+                    result = None
+            if verified is None or result is None:
+                yield event.plain_result(
+                    f"SECURITY_HOLD：当前最新版本 {artifact.version} 没有可复用的"
+                    " VERIFIED 产物；请先执行 /apull verify 并处理验证错误。"
+                )
+                return
             await self._notify_distribution(result)
             details = [
                 f"分发完成: version={result.version}",
@@ -324,3 +438,28 @@ def _distribution_summary(state: dict[str, Any], version: str) -> str:
         if status in counts:
             counts[status] += 1
     return ", ".join(f"{key}={value}" for key, value in counts.items())
+
+
+def _verification_status(
+    config: AstrBotConfig,
+    verifier: AuthenticityVerifier,
+    state: dict[str, Any],
+    version: str,
+) -> str:
+    if not bool(config.get("verification_enabled", True)):
+        return "SECURITY_HOLD (VERIFICATION_DISABLED)"
+    try:
+        verifier.preflight()
+    except Exception as exc:  # noqa: BLE001 - concise status only
+        message = str(exc)
+        if "must be configured" in message:
+            return "SECURITY_HOLD (TRUST_NOT_CONFIGURED)"
+        if "invalid trusted signer" in message:
+            return "SECURITY_HOLD (TRUST_CONFIGURATION_INVALID)"
+        return "UNAVAILABLE (VERIFIER_UNAVAILABLE)"
+    if verifier.load_verified(version) is not None:
+        return "VERIFIED"
+    attempt = state.get("verification", {}).get("last_attempt", {})
+    if attempt.get("version") == version and attempt.get("verdict"):
+        return f"SECURITY_HOLD ({attempt['verdict']})"
+    return "UNVERIFIED"

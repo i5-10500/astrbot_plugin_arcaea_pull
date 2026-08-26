@@ -12,7 +12,7 @@ import aiohttp
 from ..models import RemoteArtifact
 
 DEFAULT_API_URL = "https://webapi.lowiro.com/webapi/serve/static/bin/arcaea/apk"
-USER_AGENT = "astrbot_plugin_arcaea_pull/0.3.0"
+USER_AGENT = "astrbot_plugin_arcaea_pull/0.3.1"
 
 
 class ApiClientError(RuntimeError):

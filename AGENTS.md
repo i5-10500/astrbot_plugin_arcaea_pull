@@ -6,9 +6,9 @@ This repository contains `astrbot_plugin_arcaea_pull`, an AstrBot plugin that
 checks the Arcaea China APK feed, optionally downloads APKs safely, and exposes
 an idempotent NapCat QQ Flash Transfer distribution path.
 
-The current release target is `v0.3.0`. APK extraction is explicitly out of
+The current release target is `v0.3.1`. APK extraction is explicitly out of
 scope. Flash Transfer and future extraction are independent consumers of a
-successful download.
+`VerifiedArtifact`, never of a merely successful download.
 
 The verified minimum NapCat release exposing both `create_flash_task` and
 `send_flash_msg` is `v4.10.47`; live compatibility still requires the
@@ -19,6 +19,7 @@ admin-only small-file diagnostic on the deployment machine.
 - `main.py`: thin AstrBot lifecycle and command adapter.
 - `arcaea_pull/core/`: API, state, notification, update, and download logic.
 - `arcaea_pull/distribution/`: backend abstraction and NapCat implementation.
+- `arcaea_pull/verification/`: official Android tool adapters and authenticity gate.
 - `arcaea_pull/utils/`: filesystem and hashing helpers.
 - `tests/`: runtime-independent unit tests; do not contact production services.
 - `docs/`: architecture and Flash Transfer source-research notes.
@@ -46,6 +47,19 @@ admin-only small-file diagnostic on the deployment machine.
   success, retry failures, and treat newly allowlisted targets independently.
 - `auto_flash_transfer` requires `auto_download`; never hide a download inside
   `/apull distribute` or an invalid automatic configuration.
+- Distribution accepts `VerifiedArtifact` only. Never pass `DownloadRecord`
+  directly or add an unverified bypass configuration.
+- Verify cryptographic signatures with official `apksigner`; parsing a signer
+  certificate without successful signature verification is insufficient.
+- Read package/version identity through official `apkanalyzer`, never ZIP grep.
+- Trust only configured signer certificate SHA-256 values and exact package
+  identity obtained by the user from a known-good APK. Never bootstrap trust
+  from a newly downloaded file or network search.
+- Missing tools/trust, malformed output, signature/signer/package/version
+  mismatch, file mutation, and versionCode rollback all fail closed.
+- Preserve legacy downloaded APKs but never migrate them directly to VERIFIED.
+- Reuse a verified artifact only after its verified-directory path, size,
+  SHA-256, package, and current trusted signer set still match.
 - Do not commit secrets, runtime state, APKs, partial downloads, or research
   checkouts.
 - Keep project licensing consistently declared as `AGPL-3.0-or-later`; do not

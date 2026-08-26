@@ -6,10 +6,14 @@ the `arcaea_pull` package.
 ```text
 ArcaeaApiClient -> UpdateChecker -> Notifier
                          |
-                         +-------> Downloader -> downloaded APK
-                                                |          |
-                                                |          +-> future Extractor
-                                                +------------> DistributionService
+                         +-------> Downloader -> pending APK
+                                                |
+                                                +-> AuthenticityVerifier
+                                                        |
+                                                        +-> verified APK
+                                                                |          |
+                                                                |          +-> future Extractor
+                                                                +------------> DistributionService
                                                                   |
                                         Context.platform_manager -> BackendProvider
                                                                   |
@@ -44,6 +48,18 @@ Schema v2 migrates v1 state in place and adds per-version, per-target distributi
 records. A successful record is reused only when its APK SHA-256 also matches;
 failed or pending records remain eligible for a later retry. Removed allowlist
 targets are not processed, while newly added targets have independent state.
+
+Schema v3 adds verification state without changing distribution successes.
+`apksigner` must cryptographically accept the complete APK and emit parseable
+signer certificate SHA-256 values. `apkanalyzer` then reads the binary manifest.
+The verifier pins every current signer, requires exact configured package and API
+versionName equality, and rejects versionCode rollback. It recomputes file SHA-256
+after the tools finish before publishing a `VerifiedArtifact`.
+
+Runtime files use `downloads/pending`, `downloads/verified`, and
+`downloads/quarantine`. Legacy root-level downloads are preserved and require a
+fresh full verification. Distribution checks the verified path and SHA-256 again;
+old distribution success state cannot promote or authorize an unverified file.
 
 Notification and Flash Transfer allowlists deliberately use different identity
 types: notifications store AstrBot UMO values, while the NapCat adapter consumes

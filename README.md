@@ -1,15 +1,15 @@
 # astrbot_plugin_arcaea_pull
 
-AstrBot 的 Arcaea 本地资源获取与分发基础设施插件。当前版本 **v0.3.0**
+AstrBot 的 Arcaea 本地资源获取与分发基础设施插件。当前版本 **v0.3.1**
 负责检测 Arcaea 中国大陆版（C 版）APK 更新、按白名单通知、可靠下载最新版
 APK，并通过 NapCat QQ 闪传向显式白名单群可靠分发。
 
 > 本阶段不包含 APK 解包或游戏资源解析。QQ 闪传仍是实验性能力，实际可用性取决于
 > AstrBot、aiocqhttp、NapCat、QQ 客户端与账号环境。
 
-> 安全边界：v0.3.0 只验证下载完整性、ZIP/APK 基础结构和文件 SHA-256，尚不能
-> 证明 APK 由 lowiro 签名。发行者签名、包身份和回滚保护将在 v0.3.1 加入；在此
-> 之前只应向受控测试群启用自动闪传。
+> v0.3.1 默认 fail closed：必须由用户从自己持有、已人工确认来源的 C 版 APK
+> 建立 signer 和 package 信任根。默认信任列表为空，因此初次安装会显示
+> `SECURITY_HOLD: TRUST_NOT_CONFIGURED`，不会自动分发任何 APK。
 
 ## 功能
 
@@ -19,6 +19,10 @@ APK，并通过 NapCat QQ 闪传向显式白名单群可靠分发。
 - 可选 `auto_download`；管理员也可手动下载。
 - APK 流式写入 `.apk.part`，仅限制连接及数据块空闲时间，不限制大文件总下载时长；
   校验大小、ZIP/APK 格式与 SHA-256 后原子改名。
+- 使用 Android 官方 `apksigner` 做密码学签名验证并固定 signer 证书 SHA-256；
+  使用官方 `apkanalyzer` 精确读取 package、versionName 和 versionCode。
+- package/version 必须精确匹配，versionCode 低于最后可信记录时进入安全冻结；
+  只有 `downloads/verified/` 内路径和 SHA-256 均匹配的 `VerifiedArtifact` 能分发。
 - 持久化并分离记录已观察、已通知、已下载版本。
 - NapCat `create_flash_task` + `send_flash_msg` 自动闪传；按版本和目标记录结果，
   成功不重发、失败会重试，且绝不回退为普通群文件。
@@ -29,7 +33,7 @@ APK，并通过 NapCat QQ 闪传向显式白名单群可靠分发。
 ## 安装
 
 在 AstrBot WebUI 的插件管理页上传
-`astrbot_plugin_arcaea_pull-v0.3.0.zip`，或在 GitHub 仓库可访问后使用仓库 URL
+`astrbot_plugin_arcaea_pull-v0.3.1.zip`，或在 GitHub 仓库可访问后使用仓库 URL
 安装：
 
 ```text
@@ -42,7 +46,24 @@ https://github.com/i5-10500/astrbot_plugin_arcaea_pull
 data/plugin_data/astrbot_plugin_arcaea_pull/
 ```
 
-其中 `state.json` 保存状态，`downloads/` 保存 APK。运行时数据不会写进插件源码目录。
+其中 `state.json` 保存状态，`downloads/pending`、`verified`、`quarantine` 分隔
+未验证、可信和冻结 APK。v0.3.0 旧 APK 不会被自动视为 VERIFIED，也不会被删除。
+
+### Android 工具前置条件与信任初始化
+
+安装 Android SDK Build Tools（提供 `apksigner`）和 Command-Line Tools（提供
+`apkanalyzer`）。可把工具加入 PATH、配置 `ANDROID_HOME` / `ANDROID_SDK_ROOT`，
+或在插件配置中显式填写两个工具路径。
+
+只对你已经人工确认来源、曾实际安装或使用过的 C 版 APK 执行：
+
+```powershell
+python scripts/inspect_trusted_apk.py "D:\path\known-good-arcaea.apk"
+```
+
+确认输出 `Cryptographic signature: VALID` 后，把 signer 指纹填入
+`trusted_signer_sha256`，把 package 精确填入 `trusted_package_name`。该脚本只读
+APK，不会自动修改信任配置；绝不能用刚从网络下载的 APK 自动建立信任。
 
 ## 配置
 
@@ -61,6 +82,11 @@ data/plugin_data/astrbot_plugin_arcaea_pull/
 - `flash_transfer_platform_id`、`flash_transfer_self_id`：多 aiocqhttp 实例时用于
   选择唯一发送端；单实例保持空值。
 - `notify_on_distribution_success`、`notify_on_distribution_failure`：分发摘要通知。
+- `verification_enabled`：真实性安全门，默认启用；关闭时所有 APK 分发被拒绝。
+- `apksigner_path`、`apkanalyzer_path`：Android 官方工具路径，留空时自动发现。
+- `trusted_signer_sha256`：允许的 signer 证书 SHA-256 列表；默认空且不自动扩充。
+- `trusted_package_name`：已人工确认 APK 的精确 package name；默认空。
+- `notify_on_verification_failure`：相同“版本 × 文件 SHA-256 × verdict”只通知一次。
 
 不要把 `notify_targets` 和 `flash_transfer_targets` 当成同一白名单；二者的标识
 类型和权限意义不同。
@@ -78,13 +104,15 @@ extra_check_times = ["04:05:30"]
 /apull status
 /apull check
 /apull download
+/apull verify
 /apull distribute
 /apull flash_test
 ```
 
 `flash_test` 必须在 aiocqhttp 的当前群聊中运行，当前群号也必须在
 `flash_transfer_targets`。它只发送插件生成的小型无敏感文本文件，不发送 APK。
-`distribute` 只处理当前远端版本已经可靠下载的 APK，不会隐式下载；已经成功的
+`verify` 验证当前已下载 APK，不会隐式下载。`distribute` 只处理当前远端版本的
+VERIFIED APK，不会隐式下载或绕过验证；已经成功的
 “版本 × 群号 × SHA-256”组合会跳过。
 
 NapCatQQ 首次在 **v4.10.47** 发布 `create_flash_task` 与 `send_flash_msg` 扩展
@@ -106,6 +134,13 @@ action；建议使用 v4.10.47 或更新版本，并务必在目标机器执行�
   启用 `auto_download`；插件会拒绝隐式下载和自动分发。
 - 状态显示多个 aiocqhttp 实例：配置 `flash_transfer_platform_id` 或
   `flash_transfer_self_id`，直到只匹配一个活动实例。
+- 状态显示 `TRUST_NOT_CONFIGURED`：按上面的 known-good APK 流程建立 signer 和
+  package 信任根；不要从当前网络下载物自动填充。
+- 状态显示 `VERIFIER_UNAVAILABLE`：安装 Android SDK 工具或填写正确路径。
+- 状态显示 `CONFIG_SECURITY_ERROR`：自动分发需要同时启用下载和真实性验证。
+
+完整威胁模型、恢复步骤和 key rotation 规则见
+[APK Authenticity](docs/apk-authenticity.md)。
 
 ## 开发与测试
 

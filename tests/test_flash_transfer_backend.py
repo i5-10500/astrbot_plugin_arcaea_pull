@@ -92,4 +92,3 @@ async def test_send_action_requires_explicit_success_and_never_falls_back(tmp_pa
         await backend.send_file("123", source_file(tmp_path))
     assert actions == [CREATE_ACTION, SEND_ACTION]
     assert "send_group_msg" not in actions
-

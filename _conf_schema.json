@@ -50,7 +50,7 @@
     "default": false
   },
   "auto_flash_transfer": {
-    "description": "将已下载 APK 自动闪传到白名单群；必须同时启用 auto_download",
+    "description": "将 VERIFIED APK 自动闪传到白名单群；必须同时启用下载与验证",
     "type": "bool",
     "default": false
   },
@@ -78,6 +78,41 @@
     "description": "闪传目标失败时通知",
     "type": "bool",
     "default": true
+  },
+  "verification_enabled": {
+    "description": "启用 APK 签名、signer、包身份、版本与回滚验证",
+    "type": "bool",
+    "default": true
+  },
+  "apksigner_path": {
+    "description": "官方 apksigner 路径；留空时从 PATH 或 Android SDK 查找",
+    "type": "string",
+    "default": ""
+  },
+  "apkanalyzer_path": {
+    "description": "官方 apkanalyzer 路径；留空时从 PATH 或 Android SDK 查找",
+    "type": "string",
+    "default": ""
+  },
+  "trusted_signer_sha256": {
+    "description": "从已人工确认 APK 提取的 signer 证书 SHA-256 列表",
+    "type": "list",
+    "default": []
+  },
+  "trusted_package_name": {
+    "description": "从已人工确认 APK 得到的精确 package name",
+    "type": "string",
+    "default": ""
+  },
+  "notify_on_verification_failure": {
+    "description": "真实性验证失败时发送一次去重安全通知",
+    "type": "bool",
+    "default": true
+  },
+  "verification_timeout": {
+    "description": "每个 Android 验证工具命令的超时秒数",
+    "type": "int",
+    "default": 60
   },
   "request_timeout": {
     "description": "APK 元数据 HTTP 请求的总超时秒数",

@@ -11,9 +11,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..models import DistributionStatus, DownloadRecord
+from ..models import DistributionStatus, DownloadRecord, VerifiedArtifact
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class StateError(RuntimeError):
@@ -28,6 +28,7 @@ def default_state() -> dict[str, Any]:
         "notification": {},
         "download": {},
         "distribution": {},
+        "verification": {},
         "last_extracted_version": None,
     }
 
@@ -220,6 +221,77 @@ class StateManager:
             )
             self.save(state)
 
+    def verified_artifact(self, version: str) -> dict[str, Any]:
+        state = self.load()
+        artifacts = state["verification"].get("artifacts", {})
+        value = artifacts.get(str(version), {})
+        return copy.deepcopy(value) if isinstance(value, dict) else {}
+
+    def record_verification_success(self, artifact: VerifiedArtifact) -> None:
+        with self._lock:
+            state = self.load()
+            values = {
+                "version": artifact.version,
+                "source_url": artifact.source_url,
+                "path": str(artifact.path),
+                "size": artifact.size,
+                "file_sha256": artifact.file_sha256,
+                "package_name": artifact.package_name,
+                "version_name": artifact.version_name,
+                "version_code": artifact.version_code,
+                "signer_certificate_sha256": list(artifact.signer_certificate_sha256),
+                "verified_at": artifact.verified_at,
+                "verification_backend": artifact.verification_backend,
+                "verdict": "VERIFIED",
+            }
+            verification = state["verification"]
+            verification.setdefault("artifacts", {})[artifact.version] = values
+            verification.update(
+                {
+                    "last_verified_version": artifact.version,
+                    "last_verified_version_code": artifact.version_code,
+                    "last_verified_file_sha256": artifact.file_sha256,
+                    "last_attempt": values,
+                }
+            )
+            self.save(state)
+
+    def record_verification_failure(
+        self,
+        *,
+        version: str,
+        file_sha256: str,
+        path: Path,
+        verdict: str,
+        reason: str,
+        attempted_at: str,
+        quarantine_path: Path | None,
+        event_key: str,
+    ) -> None:
+        with self._lock:
+            state = self.load()
+            state["verification"]["last_attempt"] = {
+                "version": version,
+                "file_sha256": file_sha256,
+                "path": str(path),
+                "verdict": verdict,
+                "reason": reason,
+                "attempted_at": attempted_at,
+                "quarantine_path": str(quarantine_path) if quarantine_path else None,
+                "event_key": event_key,
+            }
+            self.save(state)
+
+    def verification_failure_notification_needed(self, event_key: str) -> bool:
+        current = self.load()["verification"].get("last_failure_notification_key")
+        return bool(event_key) and current != event_key
+
+    def record_verification_failure_notification(self, event_key: str) -> None:
+        with self._lock:
+            state = self.load()
+            state["verification"]["last_failure_notification_key"] = event_key
+            self.save(state)
+
     @staticmethod
     def _distribution_entry(state: dict[str, Any], version: str, target: str) -> dict[str, Any]:
         versions = state["distribution"].setdefault("versions", {})
@@ -234,13 +306,15 @@ class StateManager:
         version = state.get("schema_version")
         if version == SCHEMA_VERSION:
             return state, False
-        if version != 1:
+        if version not in (1, 2):
             raise StateError(f"unsupported state schema: {version!r}")
         migrated = copy.deepcopy(state)
-        legacy_distribution = migrated.get("distribution")
-        migrated["distribution"] = {"versions": {}}
-        if legacy_distribution:
-            migrated["distribution"]["legacy_v1"] = legacy_distribution
+        if version == 1:
+            legacy_distribution = migrated.get("distribution")
+            migrated["distribution"] = {"versions": {}}
+            if legacy_distribution:
+                migrated["distribution"]["legacy_v1"] = legacy_distribution
+        migrated.setdefault("verification", {})
         migrated["schema_version"] = SCHEMA_VERSION
         return migrated, True
 
@@ -250,6 +324,13 @@ class StateManager:
             raise StateError("state root must be an object")
         if state.get("schema_version") != SCHEMA_VERSION:
             raise StateError(f"unsupported state schema: {state.get('schema_version')!r}")
-        for key in ("remote", "observed", "notification", "download", "distribution"):
+        for key in (
+            "remote",
+            "observed",
+            "notification",
+            "download",
+            "distribution",
+            "verification",
+        ):
             if not isinstance(state.get(key), dict):
                 raise StateError(f"state field {key!r} must be an object")

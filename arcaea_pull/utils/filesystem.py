@@ -39,4 +39,3 @@ def validate_apk(path: Path, *, expected_size: int | None = None, min_size: int 
     except zipfile.BadZipFile as exc:
         raise ArtifactValidationError("file is not a readable APK/ZIP archive") from exc
     return size
-

@@ -22,4 +22,3 @@ def test_notify_and_flash_lists_are_not_equivalent():
     flash_targets = {"1"}
     assert "1" not in notify_targets
     assert "umo:group:1" not in flash_targets
-
