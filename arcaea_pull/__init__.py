@@ -3,5 +3,5 @@
 from .models import CheckResult, DownloadRecord, RemoteArtifact
 
 __all__ = ["CheckResult", "DownloadRecord", "RemoteArtifact"]
-__version__ = "0.2.1"
+__version__ = "0.2.3"
 

@@ -1,6 +1,20 @@
 # QQ Flash Transfer PoC
 
-Status: **SUPPORTED BY CURRENT NAPCAT EXTENSION; MANUAL ENVIRONMENT TEST REQUIRED**
+Status: **SUPPORTED ON THE RECORDED LIVE ENVIRONMENT; VERIFY EACH NEW DEPLOYMENT**
+
+## Live validation
+
+A user-provided checklist completed on 2026-08-26 reports an end-to-end pass on
+Windows 10 with AstrBot v4.27.4, NapCat core v4.18.9, and QQ 9.9.26-44498.
+NapCat returned success for both actions, produced a valid `fileSetId`, and the
+test group displayed a real QQ Flash Transfer card containing only the generated
+`flash-transfer-probe.txt`. Non-allowlisted groups and private chats were rejected
+before an action call. No ordinary group-file fallback occurred.
+
+This result establishes support for that exact environment, not every account,
+QQ build, or deployment. The source checklist retained an older v0.2.1 artifact
+label, so it is environment-level Flash Transfer evidence rather than a claim
+that the known-broken v0.2.1 installation archive is valid.
 
 ## Source snapshot
 
@@ -56,10 +70,11 @@ receiving support alone is not used as evidence for active sending.
   compatibility with a user's QQ build, account policy, NapCat configuration,
   or live network. Run the admin-only command on the target machine.
 
-## Minimum next step
+## Validation for each new environment
 
 Install the generated ZIP on the real AstrBot + aiocqhttp + NapCat machine,
 ensure NapCat is at least v4.10.47, add only the test group ID to
 `flash_transfer_targets`, and run `/apull flash_test`. Record both action results
-and the NapCat log before enabling any future automatic APK distribution.
+and the NapCat log before relying on Flash Transfer or enabling any future
+automatic APK distribution.
 

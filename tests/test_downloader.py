@@ -72,6 +72,20 @@ def make_downloader(tmp_path, responses, retry_count=1, keep_old_versions=True):
     return downloader, state
 
 
+def test_download_timeout_has_no_total_deadline(tmp_path):
+    downloader = Downloader(
+        tmp_path / "downloads",
+        StateManager(tmp_path / "state.json"),
+        connect_timeout=17,
+        read_timeout=91,
+    )
+    timeout = downloader._client_timeout()
+    assert timeout.total is None
+    assert timeout.connect == 17
+    assert timeout.sock_connect == 17
+    assert timeout.sock_read == 91
+
+
 @pytest.mark.asyncio
 async def test_success_renames_part_and_records_sha256(tmp_path):
     data = apk_bytes()

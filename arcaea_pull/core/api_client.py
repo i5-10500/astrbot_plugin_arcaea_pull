@@ -9,10 +9,10 @@ from urllib.parse import urlparse
 
 import aiohttp
 
-from arcaea_pull.models import RemoteArtifact
+from ..models import RemoteArtifact
 
 DEFAULT_API_URL = "https://webapi.lowiro.com/webapi/serve/static/bin/arcaea/apk"
-USER_AGENT = "astrbot_plugin_arcaea_pull/0.2.1"
+USER_AGENT = "astrbot_plugin_arcaea_pull/0.2.3"
 
 
 class ApiClientError(RuntimeError):
