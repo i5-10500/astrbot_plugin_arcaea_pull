@@ -12,6 +12,7 @@ from ..models import (
     DistributionStatus,
     DistributionTargetResult,
     DownloadRecord,
+    VerifiedArtifact,
 )
 from .base import FlashTransferBackend
 
@@ -28,7 +29,17 @@ class DistributionService:
         self.targets = tuple(dict.fromkeys(str(item) for item in targets if str(item)))
         self._lock = asyncio.Lock()
 
-    async def distribute(self, record: DownloadRecord) -> DistributionResult:
+    async def distribute(self, artifact: VerifiedArtifact) -> DistributionResult:
+        if not isinstance(artifact, VerifiedArtifact):
+            raise TypeError("DistributionService requires a VerifiedArtifact")
+        record = DownloadRecord(
+            version=artifact.version,
+            source_url=artifact.source_url,
+            path=artifact.path,
+            size=artifact.size,
+            sha256=artifact.file_sha256,
+            downloaded_at=artifact.verified_at,
+        )
         async with self._lock:
             due: list[str] = []
             results: list[DistributionTargetResult] = []

@@ -40,4 +40,3 @@ class Notifier:
         if errors:
             raise NotificationError("; ".join(errors))
         return True
-

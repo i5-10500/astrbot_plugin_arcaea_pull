@@ -41,39 +41,43 @@ class UpdateChecker:
 
     async def check(self) -> CheckResult:
         async with self.pipeline_lock:
-            artifact = await self.api_client.fetch()
-            before = self.state.load()
-            previous = before["observed"].get("version")
-            changed = previous != artifact.version
-            observed_at = self.clock().astimezone(timezone.utc).isoformat()
-            self.state.record_observed(artifact.version, artifact.url, observed_at)
+            return await self.check_unlocked()
 
-            notified = False
-            notification_error: str | None = None
-            last_notified = before["notification"].get("last_notified_version")
-            if changed and self.notify_on_update and last_notified != artifact.version:
-                if self.notifier is not None:
-                    try:
-                        notified = await self.notifier.broadcast(
-                            f"检测到 Arcaea C 版 APK 版本变化：{previous or '未记录'} → "
-                            f"{artifact.version}"
-                        )
-                        if notified:
-                            self.state.record_notification(artifact.version)
-                    except NotificationError as exc:
-                        notification_error = str(exc)
+    async def check_unlocked(self) -> CheckResult:
+        """Run one check when the caller already owns ``pipeline_lock``."""
+        artifact = await self.api_client.fetch()
+        before = self.state.load()
+        previous = before["observed"].get("version")
+        changed = previous != artifact.version
+        observed_at = self.clock().astimezone(timezone.utc).isoformat()
+        self.state.record_observed(artifact.version, artifact.url, observed_at)
 
-            downloaded = None
-            # Re-enter the downloader for the current remote version on every check.
-            # It validates and reuses a completed file, while a missing/failed prior
-            # download is retried even when the remote version itself is unchanged.
-            if self.auto_download and self.downloader is not None:
-                downloaded = await self.downloader.download(artifact)
+        notified = False
+        notification_error: str | None = None
+        last_notified = before["notification"].get("last_notified_version")
+        if changed and self.notify_on_update and last_notified != artifact.version:
+            if self.notifier is not None:
+                try:
+                    notified = await self.notifier.broadcast(
+                        f"检测到 Arcaea C 版 APK 版本变化：{previous or '未记录'} → "
+                        f"{artifact.version}"
+                    )
+                    if notified:
+                        self.state.record_notification(artifact.version)
+                except NotificationError as exc:
+                    notification_error = str(exc)
 
-            return CheckResult(
-                artifact=artifact,
-                changed=changed,
-                notified=notified,
-                downloaded=downloaded,
-                notification_error=notification_error,
-            )
+        downloaded = None
+        # Re-enter the downloader for the current remote version on every check.
+        # It validates and reuses a completed file, while a missing/failed prior
+        # download is retried even when the remote version itself is unchanged.
+        if self.auto_download and self.downloader is not None:
+            downloaded = await self.downloader.download(artifact)
+
+        return CheckResult(
+            artifact=artifact,
+            changed=changed,
+            notified=notified,
+            downloaded=downloaded,
+            notification_error=notification_error,
+        )

@@ -6,17 +6,26 @@ import pytest
 from arcaea_pull.core.state_manager import StateManager
 from arcaea_pull.distribution.base import FlashTransferResult
 from arcaea_pull.distribution.service import DistributionService
-from arcaea_pull.models import DistributionStatus, DownloadRecord
+from arcaea_pull.models import (
+    DistributionStatus,
+    DownloadRecord,
+    VerifiedArtifact,
+)
 
 
 def record(tmp_path, version="1", digest="a" * 64):
-    return DownloadRecord(
+    return VerifiedArtifact(
         version=version,
         source_url="https://example.test/a.apk",
         path=Path(tmp_path / f"{version}.apk"),
         size=10,
-        sha256=digest,
-        downloaded_at="now",
+        file_sha256=digest,
+        package_name="example.package",
+        version_name=version,
+        version_code=int(version) if version.isdigit() else 1,
+        signer_certificate_sha256=("f" * 64,),
+        verified_at="now",
+        verification_backend="fake",
     )
 
 
@@ -99,7 +108,16 @@ async def test_backend_resolution_failure_is_recorded_and_retried(tmp_path):
         raise RuntimeError("adapter offline")
 
     apk = record(tmp_path)
-    state.record_download_success(apk)
+    state.record_download_success(
+        DownloadRecord(
+            version=apk.version,
+            source_url=apk.source_url,
+            path=apk.path,
+            size=apk.size,
+            sha256=apk.file_sha256,
+            downloaded_at=apk.verified_at,
+        )
+    )
     download_before = state.load()["download"].copy()
     service = DistributionService(state, unavailable, ["1"])
     first = await service.distribute(apk)
@@ -121,3 +139,18 @@ async def test_concurrent_distribution_rounds_do_not_duplicate_send(tmp_path):
     assert backend.calls == ["1"]
     assert sorted((first.succeeded, second.succeeded)) == [0, 1]
     assert sorted((first.skipped, second.skipped)) == [0, 1]
+
+
+@pytest.mark.asyncio
+async def test_unverified_download_record_is_rejected(tmp_path):
+    service = DistributionService(StateManager(tmp_path / "state.json"), lambda: Backend(), ["1"])
+    unverified = DownloadRecord(
+        version="1",
+        source_url="https://example.test/a.apk",
+        path=tmp_path / "1.apk",
+        size=1,
+        sha256="a" * 64,
+        downloaded_at="now",
+    )
+    with pytest.raises(TypeError, match="VerifiedArtifact"):
+        await service.distribute(unverified)  # type: ignore[arg-type]

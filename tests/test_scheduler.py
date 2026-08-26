@@ -72,4 +72,3 @@ def test_invalid_composite_schedule_is_rejected(kwargs, message):
     now = datetime(2026, 1, 1, tzinfo=timezone.utc)
     with pytest.raises(ScheduleConfigError, match=message):
         seconds_until_next(now, "Asia/Shanghai", **kwargs)
-

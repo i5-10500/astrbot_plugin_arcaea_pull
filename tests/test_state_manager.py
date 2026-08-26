@@ -52,3 +52,21 @@ def test_schema_one_is_migrated_without_quarantine(tmp_path):
     assert state["download"]["last_downloaded_version"] == "1"
     assert state["distribution"] == {"versions": {}}
     assert not list(tmp_path.glob("state.json.corrupt-*"))
+
+
+def test_schema_two_migration_preserves_distribution_success(tmp_path):
+    path = tmp_path / "state.json"
+    old = {
+        "schema_version": 2,
+        "remote": {},
+        "observed": {},
+        "notification": {},
+        "download": {},
+        "distribution": {"versions": {"1": {"targets": {"123": {"status": "success"}}}}},
+        "last_extracted_version": None,
+    }
+    path.write_text(json.dumps(old), encoding="utf-8")
+    state = StateManager(path).load()
+    assert state["schema_version"] == SCHEMA_VERSION
+    assert state["distribution"]["versions"]["1"]["targets"]["123"]["status"] == "success"
+    assert state["verification"] == {}

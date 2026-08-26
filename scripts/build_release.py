@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
-ARCHIVE = DIST / "astrbot_plugin_arcaea_pull-v0.3.0.zip"
+ARCHIVE = DIST / "astrbot_plugin_arcaea_pull-v0.3.1.zip"
 REQUIRED_ROOT_FILES = (
     "main.py",
     "metadata.yaml",
@@ -21,6 +21,7 @@ REQUIRED_ROOT_FILES = (
 
 def package_files() -> list[Path]:
     files = [ROOT / name for name in REQUIRED_ROOT_FILES]
+    files.append(ROOT / "scripts" / "inspect_trusted_apk.py")
     files.extend(sorted((ROOT / "arcaea_pull").rglob("*.py")))
     files.extend(sorted((ROOT / "docs").rglob("*.md")))
     missing = [str(path.relative_to(ROOT)) for path in files if not path.is_file()]

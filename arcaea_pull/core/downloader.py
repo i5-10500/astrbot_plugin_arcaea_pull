@@ -90,7 +90,7 @@ class Downloader:
         final_path = self.output_dir / filename
         part_path = final_path.with_suffix(".apk.part")
 
-        reused = self._existing_record(artifact, final_path)
+        reused = await asyncio.to_thread(self._existing_record, artifact, final_path)
         if reused is not None:
             return reused
 

@@ -85,4 +85,3 @@ def _next_interval_slot(local_now: datetime, interval: int) -> datetime:
     target = midnight + timedelta(seconds=slot * interval)
     next_midnight = midnight + timedelta(days=1)
     return min(target, next_midnight)
-

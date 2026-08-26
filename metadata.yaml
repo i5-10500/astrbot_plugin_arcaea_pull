@@ -1,7 +1,7 @@
 name: astrbot_plugin_arcaea_pull
 display_name: Arcaea Pull
-desc: Arcaea 中国大陆版 APK 更新检测、可靠下载与 QQ 闪传分发
-version: 0.3.0
+desc: Arcaea 中国大陆版 APK 可信下载、真实性验证与 QQ 闪传分发
+version: 0.3.1
 author: i5-10500
 repo: https://github.com/i5-10500/astrbot_plugin_arcaea_pull
 support_platforms:

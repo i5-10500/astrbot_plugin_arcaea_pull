@@ -37,4 +37,3 @@ class FakeSession:
 
     async def close(self):
         self.closed = True
-
