@@ -27,7 +27,7 @@ from .base import (
     VerificationBackendError,
 )
 from .manifest_inspector import ApkManifestInspector
-from .tools import resolve_apkanalyzer, resolve_apksigner
+from .tools import resolve_aapt2, resolve_apksigner
 
 
 class AuthenticityVerifier:
@@ -39,7 +39,7 @@ class AuthenticityVerifier:
         trusted_signers: Iterable[str],
         trusted_package_name: str,
         apksigner_path: str = "",
-        apkanalyzer_path: str = "",
+        aapt2_path: str = "",
         timeout: float = 60,
         signature_backend: Any | None = None,
         manifest_inspector: Any | None = None,
@@ -52,7 +52,7 @@ class AuthenticityVerifier:
         self._raw_trusted_signers = tuple(str(item) for item in trusted_signers)
         self.trusted_package_name = str(trusted_package_name).strip()
         self.apksigner_path = str(apksigner_path).strip()
-        self.apkanalyzer_path = str(apkanalyzer_path).strip()
+        self.aapt2_path = str(aapt2_path).strip()
         self.timeout = max(float(timeout), 1)
         self._signature_backend = signature_backend
         self._manifest_inspector = manifest_inspector
@@ -75,7 +75,7 @@ class AuthenticityVerifier:
         manifest_inspector = self._manifest_inspector
         if manifest_inspector is None:
             manifest_inspector = ApkManifestInspector(
-                resolve_apkanalyzer(self.apkanalyzer_path), timeout=self.timeout
+                resolve_aapt2(self.aapt2_path), timeout=self.timeout
             )
         return signature_backend, manifest_inspector, trusted
 

@@ -71,7 +71,7 @@ class ArcaeaPullPlugin(Star):
             trusted_signers=_string_list(config.get("trusted_signer_sha256", [])),
             trusted_package_name=str(config.get("trusted_package_name", "")),
             apksigner_path=str(config.get("apksigner_path", "")),
-            apkanalyzer_path=str(config.get("apkanalyzer_path", "")),
+            aapt2_path=str(config.get("aapt2_path", "")),
             timeout=float(config.get("verification_timeout", 60)),
         )
         self.checker = UpdateChecker(

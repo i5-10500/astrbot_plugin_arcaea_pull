@@ -1,13 +1,13 @@
 # astrbot_plugin_arcaea_pull
 
-AstrBot 的 Arcaea 本地资源获取与分发基础设施插件。当前版本 **v0.3.1**
+AstrBot 的 Arcaea 本地资源获取与分发基础设施插件。当前版本 **v0.3.2**
 负责检测 Arcaea 中国大陆版（C 版）APK 更新、按白名单通知、可靠下载最新版
 APK，并通过 NapCat QQ 闪传向显式白名单群可靠分发。
 
 > 本阶段不包含 APK 解包或游戏资源解析。QQ 闪传仍是实验性能力，实际可用性取决于
 > AstrBot、aiocqhttp、NapCat、QQ 客户端与账号环境。
 
-> v0.3.1 默认 fail closed：必须由用户从自己持有、已人工确认来源的 C 版 APK
+> v0.3.2 默认 fail closed：必须由用户从自己持有、已人工确认来源的 C 版 APK
 > 建立 signer 和 package 信任根。默认信任列表为空，因此初次安装会显示
 > `SECURITY_HOLD: TRUST_NOT_CONFIGURED`，不会自动分发任何 APK。
 
@@ -19,8 +19,9 @@ APK，并通过 NapCat QQ 闪传向显式白名单群可靠分发。
 - 可选 `auto_download`；管理员也可手动下载。
 - APK 流式写入 `.apk.part`，仅限制连接及数据块空闲时间，不限制大文件总下载时长；
   校验大小、ZIP/APK 格式与 SHA-256 后原子改名。
-- 使用 Android 官方 `apksigner` 做密码学签名验证并固定 signer 证书 SHA-256；
-  使用官方 `apkanalyzer` 精确读取 package、versionName 和 versionCode。
+- 使用 Android 官方 Build Tools 的 `apksigner` 做密码学签名验证并固定 signer
+  证书 SHA-256；使用同一组件中的 `aapt2` 交叉读取 package、versionName 和完整
+  versionCode（含 versionCodeMajor）。
 - package/version 必须精确匹配，versionCode 低于最后可信记录时进入安全冻结；
   只有 `downloads/verified/` 内路径和 SHA-256 均匹配的 `VerifiedArtifact` 能分发。
 - 持久化并分离记录已观察、已通知、已下载版本。
@@ -33,7 +34,7 @@ APK，并通过 NapCat QQ 闪传向显式白名单群可靠分发。
 ## 安装
 
 在 AstrBot WebUI 的插件管理页上传
-`astrbot_plugin_arcaea_pull-v0.3.1.zip`，或在 GitHub 仓库可访问后使用仓库 URL
+`astrbot_plugin_arcaea_pull-v0.3.2.zip`，或在 GitHub 仓库可访问后使用仓库 URL
 安装：
 
 ```text
@@ -51,9 +52,12 @@ data/plugin_data/astrbot_plugin_arcaea_pull/
 
 ### Android 工具前置条件与信任初始化
 
-安装 Android SDK Build Tools（提供 `apksigner`）和 Command-Line Tools（提供
-`apkanalyzer`）。可把工具加入 PATH、配置 `ANDROID_HOME` / `ANDROID_SDK_ROOT`，
-或在插件配置中显式填写两个工具路径。
+只需安装 Android SDK Build Tools **26.0.2 或更新版本**；同一个组件同时提供
+`apksigner` 和 `aapt2`，无需再安装 Command-Line Tools。可把工具加入 PATH、配置
+`ANDROID_HOME` / `ANDROID_SDK_ROOT`，或在插件配置中显式填写两个工具路径。
+以本轮实测的 Windows Build Tools 36 为例，官方压缩包下载量约 59 MiB，完整解压
+约占 137 MiB；`apksigner` 还需要主机具备 Java 运行环境。插件不捆绑或下载这些
+官方工具。
 
 只对你已经人工确认来源、曾实际安装或使用过的 C 版 APK 执行：
 
@@ -83,7 +87,7 @@ APK，不会自动修改信任配置；绝不能用刚从网络下载的 APK 自
   选择唯一发送端；单实例保持空值。
 - `notify_on_distribution_success`、`notify_on_distribution_failure`：分发摘要通知。
 - `verification_enabled`：真实性安全门，默认启用；关闭时所有 APK 分发被拒绝。
-- `apksigner_path`、`apkanalyzer_path`：Android 官方工具路径，留空时自动发现。
+- `apksigner_path`、`aapt2_path`：Android 官方 Build Tools 路径，留空时自动发现。
 - `trusted_signer_sha256`：允许的 signer 证书 SHA-256 列表；默认空且不自动扩充。
 - `trusted_package_name`：已人工确认 APK 的精确 package name；默认空。
 - `notify_on_verification_failure`：相同“版本 × 文件 SHA-256 × verdict”只通知一次。
