@@ -70,5 +70,8 @@ names and payload fields.
 
 `BackendProvider` reads the active platform instances for each distribution round.
 It selects only aiocqhttp, applies optional platform-ID and bot-self-ID selectors,
-and fails closed on ambiguity. No message event or resolved bot client is retained.
+and fails closed on ambiguity. Bot self-IDs come from aiocqhttp's live reverse-
+WebSocket connection map; AstrBot's `Platform.client_self_id` is only an internal
+task UUID and must never be sent as a OneBot `self_id`. No message event or resolved
+bot client is retained.
 

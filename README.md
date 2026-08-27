@@ -1,13 +1,13 @@
 # astrbot_plugin_arcaea_pull
 
-AstrBot 的 Arcaea 本地资源获取与分发基础设施插件。当前版本 **v0.3.2**
+AstrBot 的 Arcaea 本地资源获取与分发基础设施插件。当前版本 **v0.3.3**
 负责检测 Arcaea 中国大陆版（C 版）APK 更新、按白名单通知、可靠下载最新版
 APK，并通过 NapCat QQ 闪传向显式白名单群可靠分发。
 
 > 本阶段不包含 APK 解包或游戏资源解析。QQ 闪传仍是实验性能力，实际可用性取决于
 > AstrBot、aiocqhttp、NapCat、QQ 客户端与账号环境。
 
-> v0.3.2 默认 fail closed：必须由用户从自己持有、已人工确认来源的 C 版 APK
+> v0.3.3 默认 fail closed：必须由用户从自己持有、已人工确认来源的 C 版 APK
 > 建立 signer 和 package 信任根。默认信任列表为空，因此初次安装会显示
 > `SECURITY_HOLD: TRUST_NOT_CONFIGURED`，不会自动分发任何 APK。
 
@@ -27,14 +27,14 @@ APK，并通过 NapCat QQ 闪传向显式白名单群可靠分发。
 - 持久化并分离记录已观察、已通知、已下载版本。
 - NapCat `create_flash_task` + `send_flash_msg` 自动闪传；按版本和目标记录结果，
   成功不重发、失败会重试，且绝不回退为普通群文件。
-- 从 AstrBot 活动平台管理器逐轮解析 aiocqhttp 客户端；多实例必须通过平台 ID
-  或机器人 QQ 号消歧，避免使用重载前的陈旧客户端。
+- 从 AstrBot 活动平台管理器逐轮解析 aiocqhttp 客户端，并从当前反向 WebSocket
+  连接读取真实机器人 QQ 号；多实例必须通过平台 ID 或机器人 QQ 号消歧。
 - 定时与手动操作共享互斥锁，避免重复通知和重复下载。
 
 ## 安装
 
 在 AstrBot WebUI 的插件管理页上传
-`astrbot_plugin_arcaea_pull-v0.3.2.zip`，或在 GitHub 仓库可访问后使用仓库 URL
+`astrbot_plugin_arcaea_pull-v0.3.3.zip`，或在 GitHub 仓库可访问后使用仓库 URL
 安装：
 
 ```text
@@ -138,6 +138,8 @@ action；建议使用 v4.10.47 或更新版本，并务必在目标机器执行�
   启用 `auto_download`；插件会拒绝隐式下载和自动分发。
 - 状态显示多个 aiocqhttp 实例：配置 `flash_transfer_platform_id` 或
   `flash_transfer_self_id`，直到只匹配一个活动实例。
+- 闪传错误包含 `ApiNotAvailable`：确认 NapCat 反向 WebSocket 已连接，并检查
+  `flash_transfer_self_id` 是否填写当前机器人的真实 QQ 号，而不是 AstrBot 内部 ID。
 - 状态显示 `TRUST_NOT_CONFIGURED`：按上面的 known-good APK 流程建立 signer 和
   package 信任根；不要从当前网络下载物自动填充。
 - 状态显示 `VERIFIER_UNAVAILABLE`：安装 Android SDK 工具或填写正确路径。

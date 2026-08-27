@@ -100,12 +100,17 @@ class NapCatFlashTransferBackend(FlashTransferBackend):
         try:
             result = await self._call_action(action, **payload)
         except Exception as exc:
+            detail = _exception_detail(exc)
+            if type(exc).__name__ == "ApiNotAvailable":
+                raise BackendUnavailableError(
+                    f"OneBot API connection was unavailable while invoking {action!r}: {detail}"
+                ) from exc
             if _looks_unsupported(exc):
                 raise BackendUnavailableError(
                     f"NapCat action {action!r} is unavailable; require NapCat "
-                    f">= {MINIMUM_NAPCAT_VERSION}: {exc}"
+                    f">= {MINIMUM_NAPCAT_VERSION}: {detail}"
                 ) from exc
-            raise BackendActionError(f"NapCat action {action!r} raised: {exc}") from exc
+            raise BackendActionError(f"NapCat action {action!r} raised {detail}") from exc
         if not isinstance(result, dict):
             raise BackendActionError(
                 f"NapCat action {action!r} returned {type(result).__name__}, expected object"
@@ -121,6 +126,12 @@ def _looks_unsupported(exc: Exception) -> bool:
     message = str(exc).lower()
     markers = ("not found", "unsupported", "unknown action", "404", "不支持", "未找到")
     return any(marker in message for marker in markers)
+
+
+def _exception_detail(exc: Exception) -> str:
+    name = type(exc).__name__
+    message = " ".join(str(exc).strip().split())
+    return f"{name}: {message}" if message else name
 
 
 def _resolve_file(path: Path) -> tuple[Path, bool]:

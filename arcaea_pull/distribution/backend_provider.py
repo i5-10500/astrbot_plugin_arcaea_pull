@@ -84,13 +84,14 @@ class BackendProvider:
             client = getattr(adapter, "bot", None)
             if client is None:
                 continue
-            candidates.append(
-                PlatformCandidate(
-                    platform_id=str(getattr(metadata, "id", "") or ""),
-                    self_id=str(getattr(adapter, "client_self_id", "") or ""),
-                    client=client,
+            for self_id in _connected_self_ids(client):
+                candidates.append(
+                    PlatformCandidate(
+                        platform_id=str(getattr(metadata, "id", "") or ""),
+                        self_id=self_id,
+                        client=client,
+                    )
                 )
-            )
         return candidates
 
 
@@ -104,3 +105,21 @@ def _metadata(adapter: Any) -> Any:
                 f"failed to inspect AstrBot platform metadata: {exc}"
             ) from exc
     return getattr(adapter, "metadata", None)
+
+
+def _connected_self_ids(client: Any) -> tuple[str, ...]:
+    """Read actual OneBot connection IDs, never AstrBot's internal client UUID."""
+    connections = getattr(client, "_wsr_api_clients", None)
+    if not isinstance(connections, dict):
+        api = getattr(client, "api", None)
+        websocket_api = getattr(api, "_wsr_api", None)
+        connections = getattr(websocket_api, "_api_clients", None)
+    if not isinstance(connections, dict):
+        return ()
+    return tuple(
+        dict.fromkeys(
+            str(self_id).strip()
+            for self_id, connection in connections.items()
+            if connection is not None and str(self_id).strip()
+        )
+    )
