@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_metadata_matches_release_identity():
     metadata = yaml.safe_load((ROOT / "metadata.yaml").read_text(encoding="utf-8"))
     assert metadata["name"] == "astrbot_plugin_arcaea_pull"
-    assert metadata["version"] == "0.3.2"
+    assert metadata["version"] == "0.3.3"
     assert metadata["author"] == "i5-10500"
     assert metadata["repo"].startswith("https://github.com/")
     assert metadata["support_platforms"] == ["aiocqhttp"]

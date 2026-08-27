@@ -68,6 +68,28 @@ async def test_unsupported_action_has_typed_error(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_empty_api_unavailable_error_keeps_exception_type(tmp_path):
+    api_unavailable = type("ApiNotAvailable", (Exception,), {})
+
+    async def caller(*_args, **_kwargs):
+        raise api_unavailable
+
+    backend = NapCatFlashTransferBackend(caller, ["123"])
+    with pytest.raises(BackendUnavailableError, match="ApiNotAvailable"):
+        await backend.send_file("123", source_file(tmp_path))
+
+
+@pytest.mark.asyncio
+async def test_empty_backend_error_keeps_exception_type(tmp_path):
+    async def caller(*_args, **_kwargs):
+        raise TimeoutError
+
+    backend = NapCatFlashTransferBackend(caller, ["123"])
+    with pytest.raises(BackendActionError, match="TimeoutError"):
+        await backend.send_file("123", source_file(tmp_path))
+
+
+@pytest.mark.asyncio
 async def test_create_action_failure_propagates(tmp_path):
     async def caller(*_args, **_kwargs):
         return {"result": 12, "message": "upload rejected"}
