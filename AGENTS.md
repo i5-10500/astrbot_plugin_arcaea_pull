@@ -6,7 +6,7 @@ This repository contains `astrbot_plugin_arcaea_pull`, an AstrBot plugin that
 checks the Arcaea China APK feed, optionally downloads APKs safely, and exposes
 an idempotent NapCat QQ Flash Transfer distribution path.
 
-The current release target is `v0.3.3`. APK extraction is explicitly out of
+The current release target is `v0.3.4`. APK extraction is explicitly out of
 scope. Flash Transfer and future extraction are independent consumers of a
 `VerifiedArtifact`, never of a merely successful download.
 
@@ -63,6 +63,12 @@ admin-only small-file diagnostic on the deployment machine.
 - Preserve legacy downloaded APKs but never migrate them directly to VERIFIED.
 - Reuse a verified artifact only after its verified-directory path, size,
   SHA-256, package, and current trusted signer set still match.
+- Bound managed APK archives by `old_versions_to_keep` (0–20, default 1), in
+  addition to the current APK. `keep_old_versions=false` keeps no old versions.
+  Apply verified retention only after publishing or validating the current
+  trusted artifact; a failed verification must never prune verified archives.
+  Remove deleted artifact references without resetting rollback high-water
+  marks or distribution history. Never prune legacy root APKs or quarantine.
 - Do not commit secrets, runtime state, APKs, partial downloads, or research
   checkouts.
 - Keep project licensing consistently declared as `AGPL-3.0-or-later`; do not

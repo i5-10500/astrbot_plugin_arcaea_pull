@@ -63,7 +63,10 @@ def downloaded(tmp_path, *, version="1c", legacy=False, content=b"synthetic sign
     )
 
 
-def verifier(tmp_path, *, sig=None, manifest=None, signers=(SIGNER,), package=PACKAGE):
+def verifier(
+    tmp_path, *, sig=None, manifest=None, signers=(SIGNER,), package=PACKAGE,
+    keep_old_versions=True, old_versions_to_keep=1,
+):
     return AuthenticityVerifier(
         StateManager(tmp_path / "state.json"),
         tmp_path / "downloads",
@@ -71,6 +74,8 @@ def verifier(tmp_path, *, sig=None, manifest=None, signers=(SIGNER,), package=PA
         trusted_package_name=package,
         signature_backend=sig or SignatureBackend(),
         manifest_inspector=manifest or ManifestInspector(),
+        keep_old_versions=keep_old_versions,
+        old_versions_to_keep=old_versions_to_keep,
     )
 
 
@@ -300,3 +305,131 @@ def test_verification_failure_notification_key_is_deduplicated(tmp_path):
 
 def verifier_state(tmp_path) -> dict:
     return StateManager(tmp_path / "state.json").load()["verification"]
+
+
+async def verify_versions(service, tmp_path, versions):
+    results = []
+    for index, version in enumerate(versions):
+        service._manifest_inspector = ManifestInspector(
+            ManifestIdentity(PACKAGE, version, 100 + index, "fake")
+        )
+        result = await service.verify(
+            downloaded(tmp_path, version=version), expected_version=version
+        )
+        assert result.verdict == VerificationVerdict.VERIFIED
+        results.append(result.artifact)
+    return results
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("keep,count", [(True, 0), (True, 1), (True, 3), (False, 3)])
+async def test_verified_retention_prunes_files_and_records_but_preserves_history(
+    tmp_path, keep, count,
+):
+    service = verifier(tmp_path, old_versions_to_keep=20)
+    versions = ["99c", "beta", "2c"]
+    old = await verify_versions(service, tmp_path, versions)
+    state = service.state.load()
+    state["distribution"] = {"versions": {"99c": {"targets": {"123": {"status": "success"}}}}}
+    service.state.save(state)
+    legacy = tmp_path / "downloads" / "arcaea_legacy.apk"
+    legacy.write_bytes(b"legacy")
+    quarantine = tmp_path / "downloads" / "quarantine" / "arcaea_failed.apk"
+    quarantine.parent.mkdir()
+    quarantine.write_bytes(b"evidence")
+
+    service.keep_old_versions = keep
+    service.old_versions_to_keep = count
+    service._manifest_inspector = ManifestInspector(
+        ManifestIdentity(PACKAGE, "current", 103, "fake")
+    )
+    result = await service.verify(
+        downloaded(tmp_path, version="current"), expected_version="current"
+    )
+    assert result.verdict == VerificationVerdict.VERIFIED
+    limit = count if keep else 0
+    retained = versions[-limit:] if limit else []
+    assert {path.name for path in service.verified_dir.glob("*.apk")} == {
+        f"arcaea_{version}.apk" for version in [*retained, "current"]
+    }
+    after = service.state.load()
+    assert set(after["verification"]["artifacts"]) == {*retained, "current"}
+    assert after["verification"]["last_verified_version"] == "current"
+    assert after["verification"]["last_verified_version_code"] == 103
+    assert after["download"]["path"] == str(result.artifact.path)
+    assert after["distribution"] == state["distribution"]
+    assert legacy.is_file() and quarantine.is_file()
+    assert all(artifact.path.exists() == (artifact.version in retained) for artifact in old)
+
+
+@pytest.mark.asyncio
+async def test_failed_verification_never_cleans_previous_verified_files(tmp_path):
+    service = verifier(tmp_path, old_versions_to_keep=20)
+    old = await verify_versions(service, tmp_path, ["1c", "2c", "3c"])
+    service.old_versions_to_keep = 0
+    service._signature_backend = SignatureBackend(error=SignatureInvalidError("invalid"))
+    result = await service.verify(downloaded(tmp_path, version="4c"), expected_version="4c")
+    assert result.verdict == VerificationVerdict.SIGNATURE_INVALID
+    assert all(artifact.path.is_file() for artifact in old)
+    assert service.state.load()["verification"]["last_verified_version_code"] == 102
+
+
+@pytest.mark.asyncio
+async def test_reused_verified_artifact_applies_reduced_retention_after_restart(tmp_path):
+    service = verifier(tmp_path, old_versions_to_keep=20)
+    old = await verify_versions(service, tmp_path, ["1c", "2c", "3c"])
+    current = old[-1]
+    restarted = verifier(tmp_path, old_versions_to_keep=0)
+    record = DownloadRecord(
+        current.version, current.source_url, current.path, current.size,
+        current.file_sha256, "downloaded", reused=True,
+    )
+    result = await restarted.verify(record, expected_version=current.version)
+    assert result.verdict == VerificationVerdict.VERIFIED
+    assert restarted._signature_backend.calls == 0
+    assert current.path.is_file()
+    assert not old[0].path.exists() and not old[1].path.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid_current", [None, "tampered", "missing", "untrusted"])
+async def test_startup_cleanup_requires_reusable_current_artifact(tmp_path, invalid_current):
+    service = verifier(tmp_path, old_versions_to_keep=20)
+    old = await verify_versions(service, tmp_path, ["1c", "2c", "3c"])
+    if invalid_current == "tampered":
+        old[-1].path.write_bytes(b"tampered")
+    elif invalid_current == "missing":
+        old[-1].path.unlink()
+    restarted = verifier(
+        tmp_path, old_versions_to_keep=0,
+        signers=() if invalid_current == "untrusted" else (SIGNER,),
+    )
+    await restarted.apply_retention()
+    assert all(artifact.path.is_file() == bool(invalid_current) for artifact in old[:-1])
+    assert restarted.state.load()["verification"]["last_verified_version_code"] == 102
+
+
+@pytest.mark.asyncio
+async def test_locked_old_apk_does_not_fail_verification_and_cleanup_retries(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    service = verifier(tmp_path, old_versions_to_keep=20)
+    old = await verify_versions(service, tmp_path, ["1c", "2c"])
+    service.old_versions_to_keep = 0
+    original_unlink = Path.unlink
+
+    def locked(path, *args, **kwargs):
+        if path == old[0].path:
+            raise PermissionError("file is in use")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", locked)
+    service._manifest_inspector = ManifestInspector(ManifestIdentity(PACKAGE, "3c", 102, "fake"))
+    result = await service.verify(downloaded(tmp_path, version="3c"), expected_version="3c")
+    assert result.verdict == VerificationVerdict.VERIFIED
+    assert old[0].path.is_file() and not old[1].path.exists()
+    assert set(service.state.load()["verification"]["artifacts"]) == {"1c", "3c"}
+    monkeypatch.setattr(Path, "unlink", original_unlink)
+    await service.apply_retention()
+    assert not old[0].path.exists()
+    assert result.artifact.path.is_file()

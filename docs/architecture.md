@@ -63,6 +63,20 @@ Runtime files use `downloads/pending`, `downloads/verified`, and
 fresh full verification. Distribution checks the verified path and SHA-256 again;
 old distribution success state cannot promote or authorize an unverified file.
 
+Managed APK retention keeps the current APK plus `old_versions_to_keep` archives
+(0–20, default 1). Disabling `keep_old_versions` keeps only the current APK.
+The downloader applies retention to pending files after successful download or
+reuse. The verifier independently prunes verified files after a successful
+verification or trusted cache reuse. Startup also applies the policy after
+revalidating the last trusted artifact, even when scheduled checks are disabled.
+Verified archive order uses recorded verification timestamps, falling back to
+file modification times for unrecorded files; version strings stay opaque.
+Only direct `arcaea_*.apk` files are candidates. Symlinks and Windows reparse
+points, legacy root downloads, quarantine evidence, and partial files are
+excluded. File deletion errors are logged and retried on later runs. Removed
+artifact records are pruned while rollback high-water marks and distribution
+history remain unchanged.
+
 Notification and Flash Transfer allowlists deliberately use different identity
 types: notifications store AstrBot UMO values, while the NapCat adapter consumes
 QQ group IDs. The adapter boundary is the only layer that knows NapCat action

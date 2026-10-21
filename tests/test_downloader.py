@@ -183,3 +183,21 @@ async def test_old_versions_can_be_removed_after_new_success(tmp_path):
     new = await downloader.download(RemoteArtifact("2", "https://x/2.apk"))
     assert not old.path.exists()
     assert new.path.exists()
+
+
+@pytest.mark.asyncio
+async def test_enabled_retention_is_bounded_and_reused_download_applies_reduced_limit(tmp_path):
+    data = apk_bytes()
+    downloader, _state = make_downloader(
+        tmp_path, [FakeResponse(data), FakeResponse(data), FakeResponse(data)],
+    )
+    old = await downloader.download(RemoteArtifact("99c", "https://x/1.apk"))
+    recent = await downloader.download(RemoteArtifact("alpha", "https://x/2.apk"))
+    current = await downloader.download(RemoteArtifact("2c", "https://x/3.apk"))
+    assert not old.path.exists()
+    assert recent.path.is_file() and current.path.is_file()
+    downloader.old_versions_to_keep = 0
+    reused = await downloader.download(RemoteArtifact("2c", "https://x/3.apk"))
+    assert reused.reused and downloader._session.calls == 3
+    assert not recent.path.exists()
+    assert current.path.is_file()

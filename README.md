@@ -1,13 +1,13 @@
 # astrbot_plugin_arcaea_pull
 
-AstrBot 的 Arcaea 本地资源获取与分发基础设施插件。当前版本 **v0.3.3**
+AstrBot 的 Arcaea 本地资源获取与分发基础设施插件。当前版本 **v0.3.4**
 负责检测 Arcaea 中国大陆版（C 版）APK 更新、按白名单通知、可靠下载最新版
 APK，并通过 NapCat QQ 闪传向显式白名单群可靠分发。
 
 > 本阶段不包含 APK 解包或游戏资源解析。QQ 闪传仍是实验性能力，实际可用性取决于
 > AstrBot、aiocqhttp、NapCat、QQ 客户端与账号环境。
 
-> v0.3.3 默认 fail closed：必须由用户从自己持有、已人工确认来源的 C 版 APK
+> v0.3.4 默认 fail closed：必须由用户从自己持有、已人工确认来源的 C 版 APK
 > 建立 signer 和 package 信任根。默认信任列表为空，因此初次安装会显示
 > `SECURITY_HOLD: TRUST_NOT_CONFIGURED`，不会自动分发任何 APK。
 
@@ -30,11 +30,13 @@ APK，并通过 NapCat QQ 闪传向显式白名单群可靠分发。
 - 从 AstrBot 活动平台管理器逐轮解析 aiocqhttp 客户端，并从当前反向 WebSocket
   连接读取真实机器人 QQ 号；多实例必须通过平台 ID 或机器人 QQ 号消歧。
 - 定时与手动操作共享互斥锁，避免重复通知和重复下载。
+- 旧 APK 按滑条配置限制数量，默认保留当前版本及 1 个旧版本；
+  `verified` 只在当前可信 APK 检查通过后清理。
 
 ## 安装
 
 在 AstrBot WebUI 的插件管理页上传
-`astrbot_plugin_arcaea_pull-v0.3.3.zip`，或在 GitHub 仓库可访问后使用仓库 URL
+`astrbot_plugin_arcaea_pull-v0.3.4.zip`，或在 GitHub 仓库可访问后使用仓库 URL
 安装：
 
 ```text
@@ -91,6 +93,16 @@ APK，不会自动修改信任配置；绝不能用刚从网络下载的 APK 自
 - `trusted_signer_sha256`：允许的 signer 证书 SHA-256 列表；默认空且不自动扩充。
 - `trusted_package_name`：已人工确认 APK 的精确 package name；默认空。
 - `notify_on_verification_failure`：相同“版本 × 文件 SHA-256 × verdict”只通知一次。
+- `keep_old_versions`：开启时有限保留旧 APK；关闭时只保留当前版本。
+- `old_versions_to_keep`：旧版本数量滑条（`0`–`20`，默认 `1`），不含当前版本。
+  `pending` 在下载成功或复用后清理，`verified` 在验证成功、可信缓存复用及插件
+  重载时清理；两目录分别计算数量。旧 verified 包按验证成功时间排序，缺少历史
+  记录的包按文件修改时间排序，不对版本字符串做大小比较。新版验证失败不清理
+  verified；旧版根目录 APK、隔离区及 `.part` 文件不参与此策略。
+
+升级至 v0.3.4 后，开启保留不再表示无限保留。请按需调整滑条；保存配置并重载
+插件后，只要最后可信 APK 仍通过路径、大小、SHA-256 与信任配置检查，已有 verified
+历史包也会按新上限清理，无需等待官网发布新版本。清理失败会记录警告，后续再试。
 
 不要把 `notify_targets` 和 `flash_transfer_targets` 当成同一白名单；二者的标识
 类型和权限意义不同。
@@ -144,6 +156,8 @@ action；建议使用 v4.10.47 或更新版本，并务必在目标机器执行�
   package 信任根；不要从当前网络下载物自动填充。
 - 状态显示 `VERIFIER_UNAVAILABLE`：安装 Android SDK 工具或填写正确路径。
 - 状态显示 `CONFIG_SECURITY_ERROR`：自动分发需要同时启用下载和真实性验证。
+- verified 旧包未清理：检查 `keep_old_versions` 和数量滑条，确认当前可信 APK
+  及验证工具可用，并查看日志中是否有文件占用或权限警告。安全检查不通过时会保留历史包。
 
 完整威胁模型、恢复步骤和 key rotation 规则见
 [APK Authenticity](docs/apk-authenticity.md)。

@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_metadata_matches_release_identity():
     metadata = yaml.safe_load((ROOT / "metadata.yaml").read_text(encoding="utf-8"))
     assert metadata["name"] == "astrbot_plugin_arcaea_pull"
-    assert metadata["version"] == "0.3.3"
+    assert metadata["version"] == "0.3.4"
     assert metadata["author"] == "i5-10500"
     assert metadata["repo"].startswith("https://github.com/")
     assert metadata["support_platforms"] == ["aiocqhttp"]
@@ -40,3 +40,6 @@ def test_configuration_schema_has_safe_defaults_and_separate_allowlists():
     assert schema["extra_check_times"]["default"] == []
     assert schema["download_connect_timeout"]["default"] == 30
     assert schema["download_read_timeout"]["default"] == 120
+    assert schema["keep_old_versions"]["default"] is True
+    assert schema["old_versions_to_keep"]["default"] == 1
+    assert schema["old_versions_to_keep"]["slider"] == {"min": 0, "max": 20, "step": 1}

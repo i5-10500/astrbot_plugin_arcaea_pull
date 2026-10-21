@@ -18,6 +18,7 @@ from ..utils.filesystem import (
     validate_apk,
 )
 from ..utils.hashing import sha256_file
+from ..utils.retention import cleanup_old_apks, validate_retention_count
 from .api_client import USER_AGENT, require_https
 from .state_manager import StateManager
 
@@ -44,6 +45,7 @@ class Downloader:
         min_size: int = 1024,
         chunk_size: int = 1024 * 1024,
         keep_old_versions: bool = True,
+        old_versions_to_keep: int = 1,
         session: aiohttp.ClientSession | Any | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
@@ -56,6 +58,7 @@ class Downloader:
         self.min_size = max(int(min_size), 1)
         self.chunk_size = max(int(chunk_size), 1)
         self.keep_old_versions = bool(keep_old_versions)
+        self.old_versions_to_keep = validate_retention_count(old_versions_to_keep)
         self._session = session
         self._owns_session = session is None
         self._sleep = sleep
@@ -92,6 +95,7 @@ class Downloader:
 
         reused = await asyncio.to_thread(self._existing_record, artifact, final_path)
         if reused is not None:
+            await asyncio.to_thread(self._cleanup_old_versions, reused.path)
             return reused
 
         last_error: Exception | None = None
@@ -111,8 +115,7 @@ class Downloader:
                     downloaded_at=self.clock().astimezone(timezone.utc).isoformat(),
                 )
                 self.state.record_download_success(record)
-                if not self.keep_old_versions:
-                    await asyncio.to_thread(self._cleanup_old_versions, final_path)
+                await asyncio.to_thread(self._cleanup_old_versions, final_path)
                 return record
             except (asyncio.TimeoutError, aiohttp.ClientError, ArtifactValidationError) as exc:
                 last_error = exc
@@ -186,15 +189,11 @@ class Downloader:
         )
 
     def _cleanup_old_versions(self, current_path: Path) -> None:
-        output_root = self.output_dir.resolve()
-        for candidate in self.output_dir.glob("arcaea_*.apk"):
-            try:
-                resolved = candidate.resolve()
-                if resolved.parent == output_root and resolved != current_path.resolve():
-                    resolved.unlink(missing_ok=True)
-            except OSError:
-                # Retention cleanup is best-effort and must not invalidate a verified download.
-                continue
+        cleanup_old_apks(
+            self.output_dir,
+            current_path,
+            old_versions_to_keep=self.old_versions_to_keep if self.keep_old_versions else 0,
+        )
 
 
 def _content_length(response: Any) -> int | None:
