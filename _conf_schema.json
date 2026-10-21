@@ -135,9 +135,19 @@
     "default": 3
   },
   "keep_old_versions": {
-    "description": "保留旧版本 APK",
+    "description": "保留有限数量的旧版本 APK；关闭时仅保留当前版本",
     "type": "bool",
     "default": true
+  },
+  "old_versions_to_keep": {
+    "description": "保留的旧版本 APK 数量（不含当前版本）；对 pending 和 verified 分别生效",
+    "type": "int",
+    "default": 1,
+    "slider": {
+      "min": 0,
+      "max": 20,
+      "step": 1
+    }
   }
 }
 

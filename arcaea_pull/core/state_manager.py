@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 import threading
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -254,6 +255,27 @@ class StateManager:
                     "last_attempt": values,
                 }
             )
+            self.save(state)
+
+    def forget_removed_verified_artifacts(self, paths: Iterable[Path]) -> None:
+        """Drop deleted file references without changing rollback or distribution history."""
+        removed = {path.resolve() for path in paths}
+        if not removed:
+            return
+        with self._lock:
+            state = self.load()
+            artifacts = state["verification"].get("artifacts", {})
+            if not isinstance(artifacts, dict):
+                return
+            for version, values in list(artifacts.items()):
+                if not isinstance(values, dict):
+                    continue
+                try:
+                    path = Path(values["path"]).resolve()
+                except (KeyError, OSError, TypeError, ValueError):
+                    continue
+                if path in removed:
+                    del artifacts[version]
             self.save(state)
 
     def record_verification_failure(

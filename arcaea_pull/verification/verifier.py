@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import shutil
 from collections.abc import Iterable
@@ -10,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..core.state_manager import StateManager
+from ..core.state_manager import StateError, StateManager
 from ..models import (
     AuthenticityResult,
     DownloadRecord,
@@ -19,6 +20,7 @@ from ..models import (
 )
 from ..utils.filesystem import safe_version_component
 from ..utils.hashing import sha256_file
+from ..utils.retention import cleanup_old_apks, validate_retention_count
 from .apksigner_backend import ApkSignerBackend, normalize_fingerprint
 from .base import (
     MalformedToolOutputError,
@@ -28,6 +30,8 @@ from .base import (
 )
 from .manifest_inspector import ApkManifestInspector
 from .tools import resolve_aapt2, resolve_apksigner
+
+logger = logging.getLogger(__name__)
 
 
 class AuthenticityVerifier:
@@ -41,6 +45,8 @@ class AuthenticityVerifier:
         apksigner_path: str = "",
         aapt2_path: str = "",
         timeout: float = 60,
+        keep_old_versions: bool = True,
+        old_versions_to_keep: int = 1,
         signature_backend: Any | None = None,
         manifest_inspector: Any | None = None,
     ) -> None:
@@ -54,6 +60,8 @@ class AuthenticityVerifier:
         self.apksigner_path = str(apksigner_path).strip()
         self.aapt2_path = str(aapt2_path).strip()
         self.timeout = max(float(timeout), 1)
+        self.keep_old_versions = bool(keep_old_versions)
+        self.old_versions_to_keep = validate_retention_count(old_versions_to_keep)
         self._signature_backend = signature_backend
         self._manifest_inspector = manifest_inspector
         self._lock = asyncio.Lock()
@@ -99,6 +107,7 @@ class AuthenticityVerifier:
                 self._load_verified, expected_version, record.sha256, trusted
             )
             if cached is not None:
+                await asyncio.to_thread(self._cleanup_old_versions, cached)
                 return AuthenticityResult(
                     verdict=VerificationVerdict.VERIFIED,
                     reason="verified artifact reused after path and SHA-256 validation",
@@ -248,11 +257,48 @@ class AuthenticityVerifier:
                     reused=record.reused,
                 )
             )
+            await asyncio.to_thread(self._cleanup_old_versions, artifact)
             return AuthenticityResult(
                 verdict=VerificationVerdict.VERIFIED,
                 reason="APK signature, signer, package, version, and rollback checks passed",
                 artifact=artifact,
             )
+
+    async def apply_retention(self) -> None:
+        """Apply changed settings on startup only after validating the last trusted APK."""
+        async with self._lock:
+            version = self.state.load()["verification"].get("last_verified_version")
+            if not isinstance(version, str) or not version:
+                return
+            artifact = await asyncio.to_thread(self.load_verified, version)
+            if artifact is not None:
+                await asyncio.to_thread(self._cleanup_old_versions, artifact)
+
+    def _cleanup_old_versions(self, current: VerifiedArtifact) -> None:
+        timestamps: dict[Path, float] = {}
+        try:
+            artifacts = self.state.load()["verification"].get("artifacts", {})
+            if not isinstance(artifacts, dict):
+                logger.warning("Skipping verified APK retention: malformed artifact history")
+                return
+            for values in artifacts.values():
+                if not isinstance(values, dict):
+                    continue
+                try:
+                    timestamps[Path(values["path"]).resolve()] = datetime.fromisoformat(
+                        values["verified_at"]
+                    ).timestamp()
+                except (KeyError, OSError, TypeError, ValueError):
+                    continue
+            removed = cleanup_old_apks(
+                self.verified_dir,
+                current.path,
+                old_versions_to_keep=self.old_versions_to_keep if self.keep_old_versions else 0,
+                timestamps=timestamps,
+            )
+            self.state.forget_removed_verified_artifacts(removed)
+        except (OSError, StateError) as exc:
+            logger.warning("Could not finish verified APK retention: %s", exc)
 
     def load_verified(self, version: str) -> VerifiedArtifact | None:
         try:

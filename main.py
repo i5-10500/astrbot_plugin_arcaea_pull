@@ -51,6 +51,7 @@ class ArcaeaPullPlugin(Star):
             read_timeout=float(config.get("download_read_timeout", 120)),
             retry_count=retries,
             keep_old_versions=bool(config.get("keep_old_versions", True)),
+            old_versions_to_keep=config.get("old_versions_to_keep", 1),
         )
         self.notifier = Notifier(
             _string_list(config.get("notify_targets", [])), self._send_notification
@@ -73,6 +74,8 @@ class ArcaeaPullPlugin(Star):
             apksigner_path=str(config.get("apksigner_path", "")),
             aapt2_path=str(config.get("aapt2_path", "")),
             timeout=float(config.get("verification_timeout", 60)),
+            keep_old_versions=bool(config.get("keep_old_versions", True)),
+            old_versions_to_keep=config.get("old_versions_to_keep", 1),
         )
         self.checker = UpdateChecker(
             self.api_client,
@@ -88,6 +91,8 @@ class ArcaeaPullPlugin(Star):
     async def initialize(self) -> None:
         """Start exactly one timezone-aware scheduler task."""
         self.state.load()
+        if bool(self.config.get("verification_enabled", True)):
+            await self.verifier.apply_retention()
         if bool(self.config.get("check_enabled", True)):
             try:
                 self._seconds_until_next_check()
@@ -228,6 +233,9 @@ class ArcaeaPullPlugin(Star):
             except Exception as exc:  # noqa: BLE001 - status is diagnostic
                 flash_status = f"UNAVAILABLE ({exc})"
         distribution = _distribution_summary(state, observed)
+        retained_old_versions = (
+            self.verifier.old_versions_to_keep if self.verifier.keep_old_versions else 0
+        )
         verification_status = await asyncio.to_thread(
             _verification_status, self.config, self.verifier, state, observed
         )
@@ -240,6 +248,7 @@ class ArcaeaPullPlugin(Star):
                     f"check_enabled: {bool(self.config.get('check_enabled', True))}",
                     f"schedule: {_schedule_summary(self.config)}",
                     f"auto_download: {auto_download}",
+                    f"old_versions_to_keep: {retained_old_versions}",
                     f"auto_flash_transfer: {auto_flash}",
                     f"verification: {verification_status}",
                     "trusted signer configured: "

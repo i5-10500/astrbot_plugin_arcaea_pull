@@ -79,11 +79,25 @@ def test_release_imports_through_astrbot_package_path(tmp_path):
         module = importlib.import_module(
             "data.plugins.astrbot_plugin_arcaea_pull.main"
         )
-        assert module.__version__ == "0.3.3"
+        assert module.__version__ == "0.3.4"
         assert module.ArcaeaPullPlugin.__module__ == module.__name__
         plugin = module.ArcaeaPullPlugin(object(), AstrBotConfig())
         assert plugin.downloader._client_timeout().total is None
         assert plugin.downloader.read_timeout == 120
+        configured = module.ArcaeaPullPlugin(
+            object(), AstrBotConfig(
+                check_enabled=False, keep_old_versions=True, old_versions_to_keep=3
+            )
+        )
+        assert configured.downloader.old_versions_to_keep == 3
+        assert configured.verifier.old_versions_to_keep == 3
+        assert configured.downloader.keep_old_versions is True
+        assert configured.verifier.keep_old_versions is True
+        import asyncio
+        from unittest.mock import AsyncMock
+        configured.verifier.apply_retention = AsyncMock()
+        asyncio.run(configured.initialize())
+        configured.verifier.apply_retention.assert_awaited_once()
         assert module._schedule_summary(AstrBotConfig()) == (
             "every 30m from local 00:00; extras=none"
         )
