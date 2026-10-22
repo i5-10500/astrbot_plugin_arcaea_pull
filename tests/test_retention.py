@@ -1,7 +1,10 @@
 import os
+from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
+from arcaea_pull.utils import retention
 from arcaea_pull.utils.retention import cleanup_old_apks, validate_retention_count
 
 
@@ -73,3 +76,21 @@ def test_cleanup_never_follows_symlinked_files_or_directory(tmp_path):
 def test_invalid_retention_counts_are_rejected_before_any_deletion(invalid):
     with pytest.raises(ValueError, match="old_versions_to_keep"):
         validate_retention_count(invalid)
+
+
+def test_cleanup_reports_locked_file_through_astrbot_logger(tmp_path, monkeypatch):
+    current = apk(tmp_path, "current", 1)
+    old = apk(tmp_path, "old", 2)
+    warning = Mock()
+    monkeypatch.setattr(retention.logger, "warning", warning)
+    original_unlink = Path.unlink
+
+    def locked(path, *args, **kwargs):
+        if path == old:
+            raise PermissionError("file is in use")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", locked)
+    assert not cleanup_old_apks(tmp_path, current, old_versions_to_keep=0)
+    warning.assert_called_once_with(f"Could not remove old APK {old}: file is in use")
+    assert current.is_file() and old.is_file()

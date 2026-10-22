@@ -55,7 +55,9 @@ def test_release_imports_through_astrbot_package_path(tmp_path):
         star = types.ModuleType("astrbot.api.star")
 
         api.AstrBotConfig = AstrBotConfig
-        api.logger = types.SimpleNamespace(error=lambda *_args: None,
+        api.logger = types.SimpleNamespace(info=lambda _message: None,
+                                           warning=lambda _message: None,
+                                           error=lambda *_args: None,
                                            exception=lambda *_args: None)
         event.AstrMessageEvent = object
         event.MessageChain = MessageChain
@@ -79,8 +81,11 @@ def test_release_imports_through_astrbot_package_path(tmp_path):
         module = importlib.import_module(
             "data.plugins.astrbot_plugin_arcaea_pull.main"
         )
-        assert module.__version__ == "0.3.4"
+        assert module.__version__ == "0.3.5"
         assert module.ArcaeaPullPlugin.__module__ == module.__name__
+        package = "data.plugins.astrbot_plugin_arcaea_pull.arcaea_pull"
+        assert importlib.import_module(package + ".utils.retention").logger is api.logger
+        assert importlib.import_module(package + ".verification.verifier").logger is api.logger
         plugin = module.ArcaeaPullPlugin(object(), AstrBotConfig())
         assert plugin.downloader._client_timeout().total is None
         assert plugin.downloader.read_timeout == 120
@@ -118,3 +123,28 @@ def test_release_imports_through_astrbot_package_path(tmp_path):
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_trusted_apk_cli_remains_usable_without_astrbot(tmp_path):
+    """The CLI imports SDK adapters without eagerly importing the AstrBot-bound verifier."""
+    build()
+    with zipfile.ZipFile(ARCHIVE) as archive:
+        archive.extractall(tmp_path)
+    script = tmp_path / "scripts" / "inspect_trusted_apk.py"
+    result = subprocess.run(
+        [sys.executable, "-c", textwrap.dedent("""
+            import runpy
+            import sys
+
+            sys.modules["astrbot"] = None
+            sys.argv = [sys.argv[1], "--help"]
+            runpy.run_path(sys.argv[0], run_name="__main__")
+        """), str(script)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "--apksigner" in result.stdout and "--aapt2" in result.stdout
