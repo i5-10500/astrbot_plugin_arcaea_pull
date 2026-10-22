@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import shutil
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from astrbot.api import logger
 
 from ..core.state_manager import StateError, StateManager
 from ..models import (
@@ -30,8 +31,6 @@ from .base import (
 )
 from .manifest_inspector import ApkManifestInspector
 from .tools import resolve_aapt2, resolve_apksigner
-
-logger = logging.getLogger(__name__)
 
 
 class AuthenticityVerifier:
@@ -298,7 +297,7 @@ class AuthenticityVerifier:
             )
             self.state.forget_removed_verified_artifacts(removed)
         except (OSError, StateError) as exc:
-            logger.warning("Could not finish verified APK retention: %s", exc)
+            logger.warning(f"Could not finish verified APK retention: {exc}")
 
     def load_verified(self, version: str) -> VerifiedArtifact | None:
         try:

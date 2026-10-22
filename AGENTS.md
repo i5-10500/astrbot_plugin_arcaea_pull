@@ -6,7 +6,7 @@ This repository contains `astrbot_plugin_arcaea_pull`, an AstrBot plugin that
 checks the Arcaea China APK feed, optionally downloads APKs safely, and exposes
 an idempotent NapCat QQ Flash Transfer distribution path.
 
-The current release target is `v0.3.4`. APK extraction is explicitly out of
+The current release target is `v0.3.5`. APK extraction is explicitly out of
 scope. Flash Transfer and future extraction are independent consumers of a
 `VerifiedArtifact`, never of a merely successful download.
 
@@ -27,6 +27,8 @@ admin-only small-file diagnostic on the deployment machine.
 
 ## Invariants
 
+- Import the runtime logger only with `from astrbot.api import logger`; never
+  create a Python `logging` logger. Tests may mock the AstrBot API boundary.
 - Keep `last_seen_version`, `last_notified_version`, and
   `last_downloaded_version` independent.
 - Compare remote version strings for inequality only; do not impose semantic

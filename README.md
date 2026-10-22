@@ -1,13 +1,13 @@
 # astrbot_plugin_arcaea_pull
 
-AstrBot 的 Arcaea 本地资源获取与分发基础设施插件。当前版本 **v0.3.4**
+AstrBot 的 Arcaea 本地资源获取与分发基础设施插件。当前版本 **v0.3.5**
 负责检测 Arcaea 中国大陆版（C 版）APK 更新、按白名单通知、可靠下载最新版
 APK，并通过 NapCat QQ 闪传向显式白名单群可靠分发。
 
 > 本阶段不包含 APK 解包或游戏资源解析。QQ 闪传仍是实验性能力，实际可用性取决于
 > AstrBot、aiocqhttp、NapCat、QQ 客户端与账号环境。
 
-> v0.3.4 默认 fail closed：必须由用户从自己持有、已人工确认来源的 C 版 APK
+> v0.3.5 默认 fail closed：必须由用户从自己持有、已人工确认来源的 C 版 APK
 > 建立 signer 和 package 信任根。默认信任列表为空，因此初次安装会显示
 > `SECURITY_HOLD: TRUST_NOT_CONFIGURED`，不会自动分发任何 APK。
 
@@ -36,7 +36,7 @@ APK，并通过 NapCat QQ 闪传向显式白名单群可靠分发。
 ## 安装
 
 在 AstrBot WebUI 的插件管理页上传
-`astrbot_plugin_arcaea_pull-v0.3.4.zip`，或在 GitHub 仓库可访问后使用仓库 URL
+`astrbot_plugin_arcaea_pull-v0.3.5.zip`，或在 GitHub 仓库可访问后使用仓库 URL
 安装：
 
 ```text
@@ -163,6 +163,9 @@ action；建议使用 v4.10.47 或更新版本，并务必在目标机器执行�
 [APK Authenticity](docs/apk-authenticity.md)。
 
 ## 开发与测试
+
+v0.3.5 按插件审核建议，将 APK 清理和真实性验证模块统一改用 `astrbot.api.logger`。
+独立 known-good APK 检查脚本仍可在未安装 AstrBot 的主机运行。
 
 ```powershell
 python -m venv .venv

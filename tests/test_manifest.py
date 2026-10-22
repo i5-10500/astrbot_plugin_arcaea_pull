@@ -1,3 +1,4 @@
+import ast
 import json
 from pathlib import Path
 
@@ -6,10 +7,20 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_runtime_logging_does_not_use_python_logging_module():
+    runtime_files = [ROOT / "main.py", *(ROOT / "arcaea_pull").rglob("*.py")]
+    for path in runtime_files:
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                assert all(alias.name.split(".")[0] != "logging" for alias in node.names), path
+            elif isinstance(node, ast.ImportFrom):
+                assert (node.module or "").split(".")[0] != "logging", path
+
+
 def test_metadata_matches_release_identity():
     metadata = yaml.safe_load((ROOT / "metadata.yaml").read_text(encoding="utf-8"))
     assert metadata["name"] == "astrbot_plugin_arcaea_pull"
-    assert metadata["version"] == "0.3.4"
+    assert metadata["version"] == "0.3.5"
     assert metadata["author"] == "i5-10500"
     assert metadata["repo"].startswith("https://github.com/")
     assert metadata["support_platforms"] == ["aiocqhttp"]

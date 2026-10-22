@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace
 
 import pytest
 
@@ -317,7 +318,10 @@ async def verify_versions(service, tmp_path, versions):
             downloaded(tmp_path, version=version), expected_version=version
         )
         assert result.verdict == VerificationVerdict.VERIFIED
-        results.append(result.artifact)
+        # Fast Windows runs can publish successive fixtures within one clock tick.
+        artifact = replace(result.artifact, verified_at=f"2026-01-01T00:00:{index:02d}+00:00")
+        service.state.record_verification_success(artifact)
+        results.append(artifact)
     return results
 
 

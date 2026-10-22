@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import logging
 import stat
 from collections.abc import Mapping
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from astrbot.api import logger
 
 
 def validate_retention_count(value: object) -> int:
@@ -48,7 +47,7 @@ def cleanup_old_apks(
                 timestamp = (timestamps or {}).get(resolved, modified_at)
                 candidates.append((timestamp, candidate))
             except OSError as exc:
-                logger.warning("Could not inspect old APK %s: %s", candidate, exc)
+                logger.warning(f"Could not inspect old APK {candidate}: {exc}")
         candidates.sort(key=lambda item: (item[0], item[1].name), reverse=True)
         for _, candidate in candidates[old_versions_to_keep:]:
             try:
@@ -57,11 +56,11 @@ def cleanup_old_apks(
                     continue
                 candidate.unlink(missing_ok=True)
                 removed.append(root / candidate.name)
-                logger.info("Removed old APK %s", candidate)
+                logger.info(f"Removed old APK {candidate}")
             except OSError as exc:
-                logger.warning("Could not remove old APK %s: %s", candidate, exc)
+                logger.warning(f"Could not remove old APK {candidate}: {exc}")
     except OSError as exc:
-        logger.warning("Could not clean APK directory %s: %s", directory, exc)
+        logger.warning(f"Could not clean APK directory {directory}: {exc}")
     return tuple(removed)
 
 
